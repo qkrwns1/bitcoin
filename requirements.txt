@@ -1,0 +1,25 @@
+# ============================================================
+# Bitcoin RL System — 서버 설치용 requirements
+# Python 3.11 권장 / RTX 4090 (CUDA 12.x)
+# ============================================================
+
+# [1단계] PyTorch — CUDA 버전은 pip install 직접 지정 (아래 참고)
+#   pip install torch --index-url https://download.pytorch.org/whl/cu124
+# 아래 줄은 CPU fallback용 (서버에서는 위 명령 사용)
+torch>=2.2.0
+
+# RL 프레임워크
+stable-baselines3>=2.3.0
+gymnasium>=0.29.0
+
+# 데이터
+numpy>=1.26.0
+pandas>=2.2.0
+pyarrow>=15.0.0          # parquet read/write
+duckdb>=0.10.0
+
+# Upbit API 수집
+requests>=2.31.0
+
+# 학습 모니터링
+tensorboard>=2.16.0

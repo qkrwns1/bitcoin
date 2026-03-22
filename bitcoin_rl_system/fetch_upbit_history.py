@@ -13,8 +13,8 @@ DATA_ROOT = Path(__file__).resolve().parent.parent / "data analysis" / "data"
 MINUTE_PATH = DATA_ROOT / "raw" / "candles_1m" / "KRW-BTC_minutes_1m.parquet"
 DAY_PATH = DATA_ROOT / "raw" / "candles_days" / "KRW-BTC_days.parquet"
 
-# 1년치 1분봉 = 365 * 24 * 60 = 525,600
-MINUTE_TARGET = 365 * 24 * 60
+# 3년치 1분봉 = 3 * 365 * 24 * 60 = 1,576,800
+MINUTE_TARGET = 3 * 365 * 24 * 60
 DAY_TARGET = 365 * 3  # 3년치 일봉 (52주 피처용)
 
 
