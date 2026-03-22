@@ -197,6 +197,7 @@ class BitcoinTradingEnvironment(gym.Env):
         self.current_step += 1
         terminated = self.current_step >= len(self.market_frame) - 2
         truncated = False
+        row = self.market_frame.loc[self.current_step]
         info = {
             "target_ratio": target_ratio,
             "prev_equity": prev_equity,
@@ -204,5 +205,10 @@ class BitcoinTradingEnvironment(gym.Env):
             "time_penalty": time_penalty,
             "cash": self.cash,
             "btc_holding": self.btc_holding,
+            "open": float(row["open"]),
+            "high": float(row["high"]),
+            "low": float(row["low"]),
+            "close": float(next_close),
+            "ts": str(row["ts"]),
         }
         return self._observation(), float(reward), terminated, truncated, info

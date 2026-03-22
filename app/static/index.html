@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bitcoin RL Dashboard</title>
+  <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:       #0d1117;
+      --surface:  #161b22;
+      --surface2: #1c2128;
+      --border:   #30363d;
+      --orange:   #f7931a;
+      --green:    #3fb950;
+      --red:      #f85149;
+      --blue:     #58a6ff;
+      --purple:   #bc8cff;
+      --text:     #e6edf3;
+      --muted:    #8b949e;
+      --dim:      #6e7681;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: grid;
+      grid-template-rows: 56px 1fr 180px;
+      overflow: hidden;
+    }
+
+    /* ─── HEADER ─────────────────────────────── */
+    header {
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      gap: 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--orange);
+      letter-spacing: -0.02em;
+    }
+
+    .logo-icon {
+      width: 28px;
+      height: 28px;
+      background: var(--orange);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 800;
+      color: #000;
+    }
+
+    .divider { width: 1px; height: 24px; background: var(--border); }
+
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--dim);
+      flex-shrink: 0;
+    }
+    .dot.active  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .dot.waiting { background: var(--orange); animation: blink 1.2s ease-in-out infinite; }
+    .dot.offline { background: var(--red); }
+
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    .spacer { flex: 1; }
+
+    .live-price {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+    }
+    .price-label { font-size: 11px; color: var(--dim); font-weight: 500; letter-spacing: 0.04em; }
+    .price-val   { font-size: 22px; font-weight: 700; transition: color .3s; }
+    .price-chg   {
+      font-size: 12px; font-weight: 500;
+      padding: 2px 8px; border-radius: 4px;
+      background: rgba(63,185,80,.12);
+      color: var(--green);
+    }
+    .price-chg.dn { background: rgba(248,81,73,.12); color: var(--red); }
+
+    /* ─── MAIN ───────────────────────────────── */
+    .main {
+      display: grid;
+      grid-template-columns: 1fr 280px;
+      overflow: hidden;
+    }
+
+    .charts-col {
+      display: grid;
+      grid-template-rows: 1fr 110px;
+      overflow: hidden;
+    }
+
+    #price-chart    { width: 100%; height: 100%; }
+    #position-chart {
+      width: 100%; height: 100%;
+      border-top: 1px solid var(--border);
+    }
+
+    /* ─── SIDE PANEL ─────────────────────────── */
+    .side {
+      border-left: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    .card {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .card-title {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--dim);
+      margin-bottom: 12px;
+    }
+
+    /* Portfolio card */
+    .equity-big {
+      font-size: 24px;
+      font-weight: 700;
+      line-height: 1;
+      margin-bottom: 5px;
+      letter-spacing: -0.02em;
+    }
+    .equity-sub { font-size: 12px; font-weight: 500; }
+    .up   { color: var(--green); }
+    .dn   { color: var(--red); }
+    .nu   { color: var(--muted); }
+
+    /* Position card */
+    .pos-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      font-size: 12px;
+    }
+    .pos-label { color: var(--muted); }
+    .pos-val   { font-size: 18px; font-weight: 700; color: var(--orange); }
+
+    .gauge-track {
+      height: 8px;
+      background: var(--surface2);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+    .gauge-fill {
+      height: 100%;
+      border-radius: 4px;
+      background: linear-gradient(90deg, #3fb950, #f7931a, #f85149);
+      transition: width .4s cubic-bezier(.4,0,.2,1);
+    }
+
+    .kv { display: flex; justify-content: space-between; padding: 3px 0; font-size: 12px; }
+    .kv .k { color: var(--muted); }
+    .kv .v { font-weight: 500; }
+
+    /* Model card */
+    .model-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .stat {
+      background: var(--surface2);
+      border-radius: 6px;
+      padding: 8px 10px;
+    }
+    .stat .sl { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 3px; }
+    .stat .sv { font-size: 14px; font-weight: 600; }
+
+    /* No model state */
+    .no-model {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 20px;
+      text-align: center;
+    }
+    .no-model .icon { font-size: 32px; }
+    .no-model h3 { font-size: 14px; font-weight: 600; }
+    .no-model p  { font-size: 12px; color: var(--dim); line-height: 1.5; }
+    .no-model code {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-size: 11px;
+      color: var(--blue);
+    }
+
+    /* ─── FOOTER ─────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border);
+      display: grid;
+      grid-template-columns: 1fr 280px;
+      overflow: hidden;
+    }
+
+    #equity-chart {
+      width: 100%; height: 100%;
+      border-right: 1px solid var(--border);
+    }
+
+    .footer-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      background: var(--border);
+    }
+    .fstat {
+      background: var(--bg);
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 2px;
+    }
+    .fstat .fl { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; }
+    .fstat .fv { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  </style>
+</head>
+
+<body>
+
+<!-- ─── HEADER ──────────────────────────────────────────── -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">₿</div>
+    Bitcoin RL
+  </div>
+  <div class="divider"></div>
+  <div class="status-row">
+    <div class="dot waiting" id="dot"></div>
+    <span id="status-text">연결 중...</span>
+  </div>
+  <div class="spacer"></div>
+  <div class="live-price">
+    <span class="price-label">KRW-BTC</span>
+    <span class="price-val" id="hdr-price">-</span>
+    <span class="price-chg" id="hdr-chg">-</span>
+  </div>
+</header>
+
+<!-- ─── MAIN ────────────────────────────────────────────── -->
+<div class="main">
+
+  <!-- Charts column -->
+  <div class="charts-col">
+    <div id="price-chart"></div>
+    <div id="position-chart"></div>
+  </div>
+
+  <!-- Side panel -->
+  <div class="side" id="side-panel">
+
+    <!-- shown before model loads -->
+    <div class="no-model" id="no-model-msg">
+      <div class="icon">⏳</div>
+      <h3>모델 대기 중</h3>
+      <p>학습 완료 후<br><code>checkpoints/final_model.zip</code><br>파일이 있어야 시작됩니다.</p>
+    </div>
+
+    <!-- shown after model loads (hidden initially) -->
+    <div id="model-panel" style="display:none">
+
+      <!-- Portfolio -->
+      <div class="card">
+        <div class="card-title">포트폴리오</div>
+        <div class="equity-big" id="equity-val">₩-</div>
+        <div class="equity-sub nu" id="equity-pnl">-</div>
+      </div>
+
+      <!-- Position -->
+      <div class="card">
+        <div class="card-title">포지션</div>
+        <div class="pos-header">
+          <span class="pos-label">BTC 비중</span>
+          <span class="pos-val" id="ratio-val">0%</span>
+        </div>
+        <div class="gauge-track">
+          <div class="gauge-fill" id="gauge" style="width:0%"></div>
+        </div>
+        <div class="kv"><span class="k">BTC 보유</span><span class="v" id="btc-val">-</span></div>
+        <div class="kv"><span class="k">현금</span><span class="v" id="cash-val">-</span></div>
+      </div>
+
+      <!-- Model stats -->
+      <div class="card">
+        <div class="card-title">모델 (온라인 학습 중)</div>
+        <div class="model-grid">
+          <div class="stat">
+            <div class="sl">스텝</div>
+            <div class="sv" id="step-val">-</div>
+          </div>
+          <div class="stat">
+            <div class="sl">PPO 업데이트</div>
+            <div class="sv" id="update-val">-</div>
+          </div>
+          <div class="stat" style="grid-column:1/-1">
+            <div class="sl">마지막 리워드</div>
+            <div class="sv" id="reward-val">-</div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /model-panel -->
+  </div><!-- /side -->
+
+</div><!-- /main -->
+
+<!-- ─── FOOTER ───────────────────────────────────────────── -->
+<footer>
+  <div id="equity-chart"></div>
+  <div class="footer-stats">
+    <div class="fstat">
+      <div class="fl">시뮬 타임스탬프</div>
+      <div class="fv" id="ft-ts">-</div>
+    </div>
+    <div class="fstat">
+      <div class="fl">시뮬 종가</div>
+      <div class="fv" id="ft-close">-</div>
+    </div>
+    <div class="fstat">
+      <div class="fl">초기 자본</div>
+      <div class="fv">₩1,000,000</div>
+    </div>
+    <div class="fstat">
+      <div class="fl">수익률</div>
+      <div class="fv" id="ft-roi">-</div>
+    </div>
+  </div>
+</footer>
+
+<script>
+// ───────────────────────────────────────────
+// Constants & state
+// ───────────────────────────────────────────
+const INITIAL_EQUITY = 1_000_000;
+
+let state = {
+  step: 0, nUpdates: 0,
+  equity: INITIAL_EQUITY, cash: INITIAL_EQUITY, btcHolding: 0,
+  targetRatio: 0, reward: 0,
+  open: 0, high: 0, low: 0, close: 0, ts: '',
+};
+
+// ───────────────────────────────────────────
+// Chart setup
+// ───────────────────────────────────────────
+const BASE_OPTS = {
+  autoSize: true,
+  layout: { background: { color: '#0d1117' }, textColor: '#6e7681' },
+  grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
+  timeScale: { borderColor: '#30363d', timeVisible: true, secondsVisible: false },
+  rightPriceScale: { borderColor: '#30363d' },
+  crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+  handleScroll: true,
+  handleScale: true,
+};
+
+const priceChart = LightweightCharts.createChart(
+  document.getElementById('price-chart'), BASE_OPTS
+);
+const candleSeries = priceChart.addCandlestickSeries({
+  upColor: '#3fb950', downColor: '#f85149',
+  borderUpColor: '#3fb950', borderDownColor: '#f85149',
+  wickUpColor: '#3fb950', wickDownColor: '#f85149',
+});
+const volumeSeries = priceChart.addHistogramSeries({
+  color: '#30363d',
+  priceFormat: { type: 'volume' },
+  priceScaleId: 'vol',
+});
+priceChart.priceScale('vol').applyOptions({
+  scaleMargins: { top: 0.82, bottom: 0 },
+});
+
+const posChart = LightweightCharts.createChart(
+  document.getElementById('position-chart'),
+  { ...BASE_OPTS, layout: { ...BASE_OPTS.layout, textColor: '#8b949e' } }
+);
+const posSeries = posChart.addAreaSeries({
+  lineColor: '#f7931a',
+  topColor: 'rgba(247,147,26,.25)',
+  bottomColor: 'rgba(247,147,26,0)',
+  lineWidth: 2,
+  priceFormat: { type: 'custom', formatter: v => (v * 100).toFixed(0) + '%' },
+});
+posChart.priceScale('right').applyOptions({
+  scaleMargins: { top: 0.05, bottom: 0.05 },
+});
+
+const eqChart = LightweightCharts.createChart(
+  document.getElementById('equity-chart'),
+  { ...BASE_OPTS, layout: { ...BASE_OPTS.layout, textColor: '#6e7681' } }
+);
+const eqSeries = eqChart.addLineSeries({
+  color: '#58a6ff',
+  lineWidth: 2,
+  priceFormat: { type: 'custom', formatter: v => '₩' + Math.round(v / 1000) + 'K' },
+});
+// Reference line at initial equity
+const refSeries = eqChart.addLineSeries({
+  color: '#30363d', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
+  priceFormat: { type: 'custom', formatter: () => '' },
+  lastValueVisible: false, priceLineVisible: false,
+});
+
+// Sync timescales between price and position charts
+priceChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+  if (range !== null) posChart.timeScale().setVisibleLogicalRange(range);
+});
+posChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
+  if (range !== null) priceChart.timeScale().setVisibleLogicalRange(range);
+});
+
+// ───────────────────────────────────────────
+// Helpers
+// ───────────────────────────────────────────
+const fmt  = n => '₩' + Math.round(n).toLocaleString('ko-KR');
+const pct  = (n, d=2) => (n >= 0 ? '+' : '') + (n * 100).toFixed(d) + '%';
+const cls  = n => n > 0 ? 'up' : n < 0 ? 'dn' : 'nu';
+const set  = (id, txt) => { const el = document.getElementById(id); if(el) el.textContent = txt; };
+const setC = (id, c)   => { const el = document.getElementById(id); if(el) el.className = c; };
+
+// ───────────────────────────────────────────
+// UI update (throttled)
+// ───────────────────────────────────────────
+let _rafPending = false;
+let _pendingState = null;
+
+function scheduleRender(data) {
+  _pendingState = data;
+  if (!_rafPending) {
+    _rafPending = true;
+    requestAnimationFrame(render);
+  }
+}
+
+function render() {
+  _rafPending = false;
+  if (!_pendingState) return;
+  const d = _pendingState;
+
+  // Show model panel on first step
+  document.getElementById('no-model-msg').style.display = 'none';
+  document.getElementById('model-panel').style.display  = 'block';
+
+  const roi = (d.equity - INITIAL_EQUITY) / INITIAL_EQUITY;
+  const pnl = d.equity - INITIAL_EQUITY;
+
+  // Portfolio
+  set('equity-val', fmt(d.equity));
+  set('equity-pnl', fmt(pnl) + ' (' + pct(roi) + ')');
+  setC('equity-pnl', 'equity-sub ' + cls(pnl));
+
+  // Position
+  const rp = (d.targetRatio * 100).toFixed(1) + '%';
+  set('ratio-val', rp);
+  document.getElementById('gauge').style.width = rp;
+  set('btc-val', d.btcHolding.toFixed(6) + ' BTC');
+  set('cash-val', fmt(d.cash));
+
+  // Model stats
+  set('step-val', d.step.toLocaleString());
+  set('update-val', d.nUpdates.toLocaleString());
+  const rwEl = document.getElementById('reward-val');
+  if (rwEl) {
+    rwEl.textContent = d.reward.toFixed(5);
+    rwEl.className = 'sv ' + cls(d.reward);
+  }
+
+  // Footer
+  set('ft-ts', d.ts ? d.ts.substring(0, 16) : '-');
+  set('ft-close', d.close ? fmt(d.close) : '-');
+  set('ft-roi', pct(roi));
+  setC('ft-roi', 'fv ' + cls(roi));
+
+  // ── Charts ──────────────────────────────
+  if (d.ts && d.close) {
+    const t = Math.floor(new Date(d.ts.replace(' ', 'T') + 'Z').getTime() / 1000);
+    if (t > 0) {
+      // Candlestick
+      candleSeries.update({ time: t, open: d.open, high: d.high, low: d.low, close: d.close });
+
+      // Volume (approximate with btcHolding change as proxy)
+      volumeSeries.update({
+        time: t,
+        value: d.btcHolding,
+        color: d.close >= d.open ? 'rgba(63,185,80,.4)' : 'rgba(248,81,73,.4)',
+      });
+
+      // Position ratio
+      posSeries.update({ time: t, value: d.targetRatio });
+
+      // Equity curve
+      eqSeries.update({ time: t, value: d.equity });
+      refSeries.update({ time: t, value: INITIAL_EQUITY });
+    }
+  }
+}
+
+// ───────────────────────────────────────────
+// WebSocket
+// ───────────────────────────────────────────
+const dotEl   = document.getElementById('dot');
+const statusEl = document.getElementById('status-text');
+
+function connect() {
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+
+  ws.onopen = () => {
+    dotEl.className = 'dot active';
+    statusEl.textContent = '온라인 학습 중';
+
+    // Status check
+    fetch('/api/status').then(r => r.json()).then(s => {
+      if (!s.model_loaded) {
+        dotEl.className = 'dot waiting';
+        statusEl.textContent = '모델 대기 중';
+      }
+    });
+  };
+
+  ws.onmessage = e => {
+    const d = JSON.parse(e.data);
+    if (d.type === 'step')   scheduleRender(d);
+    if (d.type === 'update') set('update-val', d.n_updates.toLocaleString());
+  };
+
+  ws.onclose = () => {
+    dotEl.className = 'dot offline';
+    statusEl.textContent = '재연결 중...';
+    setTimeout(connect, 2000);
+  };
+
+  ws.onerror = () => ws.close();
+}
+
+connect();
+
+// ───────────────────────────────────────────
+// Real-time header price (Upbit polling)
+// ───────────────────────────────────────────
+async function fetchHeaderPrice() {
+  try {
+    const r = await fetch('/api/candles?count=1');
+    const [c] = await r.json();
+    if (!c) return;
+
+    const price  = c.trade_price;
+    const change = (c.trade_price - c.opening_price) / c.opening_price;
+
+    const priceEl = document.getElementById('hdr-price');
+    const chgEl   = document.getElementById('hdr-chg');
+
+    priceEl.textContent = fmt(price);
+    priceEl.style.color = change >= 0 ? 'var(--green)' : 'var(--red)';
+
+    chgEl.textContent = pct(change, 2);
+    chgEl.className   = 'price-chg' + (change < 0 ? ' dn' : '');
+  } catch {}
+}
+
+fetchHeaderPrice();
+setInterval(fetchHeaderPrice, 10_000);
+</script>
+
+</body>
+</html>
