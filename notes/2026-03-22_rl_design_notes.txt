@@ -209,3 +209,133 @@ RL Design Notes
   rl_agent.py runs PPO with Transformer only on the sequence branch
 - Step 7:
   evaluation is performed only on later unseen periods
+
+20. Feature set V1 fixed
+- V1 feature set is now based on all items classified as required + recommended.
+- Sequence features include:
+  OHLCV / trade value
+  short-horizon returns
+  candle body and wick structure
+  volume z-score features
+  volatility features
+  rolling high / low distance features from 15m to 4h
+- Context features include:
+  daily high / low distance
+  52-week high / low distance
+  days since 52-week high / low
+  52-week range position
+  24h accumulated trade volume / trade price
+  change rate context
+  market state / warning / suspension flags
+  ask_bid
+- Portfolio features include:
+  cash
+  BTC holding
+  average entry price
+  position ratio
+  total equity
+  unrealized and realized PnL
+- Explicitly excluded from V1:
+  trade-derived microstructure features
+  orderbook-derived features
+
+21. Implementation progress completed today
+- Historical Upbit market data fetch pipeline was added.
+- Script added:
+  bitcoin_rl_system/fetch_upbit_history.py
+- This currently downloads:
+  KRW-BTC 1-minute candles
+  KRW-BTC daily candles
+- Current downloaded dataset:
+  minute rows: 3000
+  day rows: 400
+- Current minute time range:
+  2026-03-20 17:42:00 to 2026-03-22 19:41:00
+
+22. Processed RL training frame created
+- Script added:
+  bitcoin_rl_system/build_training_frame.py
+- Output file created:
+  data analysis/data/processed/rl/rl_market_frame_1m.parquet
+- DuckDB table created or replaced:
+  rl_market_frame_1m
+- Current processed frame summary:
+  rows: 3000
+  columns: 46
+- The processed frame currently includes the V1 sequence/context feature set.
+- Some Upbit-style context fields that are not trivially available historically are represented by safe derived or proxy values for now.
+
+23. Data handler implementation status
+- bitcoin_rl_system/data_handler.py now:
+  loads the processed RL frame
+  exposes sequence/context/portfolio feature layout
+  splits train / validation / test by time
+  returns summary information
+- Current split:
+  train: 2100 rows
+  val: 450 rows
+  test: 450 rows
+
+24. Trading environment implementation status
+- bitcoin_rl_system/trading_environment.py now has a working custom Gymnasium environment.
+- Current implemented rules:
+  action = target_position_ratio in [0, 1]
+  state uses data up to t
+  execution at t+1 open
+  reward = net_equity_(t+1) - net_equity_t - holding_penalty
+  fee rate = 0.05%
+- The environment currently builds a flattened observation made from:
+  sequence block
+  context block
+  portfolio block
+- Portfolio state currently tracks:
+  cash
+  BTC holdings
+  average entry price
+  realized pnl
+  unrealized pnl
+  total equity
+  position ratio
+
+25. RL agent implementation status
+- bitcoin_rl_system/rl_agent.py now has a working PPO agent wrapper.
+- PPO is built using stable-baselines3.
+- Current feature extractor design:
+  flattened observation input
+  reshape sequence branch
+  Transformer encoder on sequence branch
+  MLP on context branch
+  MLP on portfolio branch
+  fused latent -> PPO actor / critic
+- This matches the intended architectural direction.
+
+26. Main training entry status
+- bitcoin_rl_system/main.py now builds:
+  data handler
+  train environment
+  PPO model
+- The entry script successfully builds the PPO model.
+
+27. Smoke-test training result
+- A short PPO training smoke test was executed successfully.
+- Test run used a very small configuration only to verify training viability.
+- Result:
+  PPO model build succeeded
+  environment interaction succeeded
+  short learning loop succeeded
+- This means the project is now in a minimally trainable state.
+
+28. Remaining limitations
+- Validation / test evaluation loop is not implemented yet.
+- Model save / load flow is not implemented yet.
+- Historical data coverage is still short for serious training.
+- Trade-derived microstructure features are not included yet.
+- Orderbook-derived features are not included yet.
+- Some historical Upbit context values are currently approximated from available candle data.
+
+29. Current next priorities
+- expand historical data coverage
+- add evaluation loop for val / test periods
+- add model checkpoint save / load
+- improve data quality for Upbit context features
+- later add trade-derived features

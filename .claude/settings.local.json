@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(codex login:*)",
+      "Read(//c/Users/82107/.codex/**)",
+      "Bash(python -c \":*)",
+      "Bash(python -m bitcoin_rl_system.fetch_upbit_history)"
+    ]
+  }
+}
