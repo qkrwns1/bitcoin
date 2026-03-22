@@ -1,0 +1,211 @@
+Date: 2026-03-22
+
+RL Design Notes
+
+1. Current direction
+- The immediate goal is still design, not full implementation.
+- The project direction is a reinforcement learning trading model for Bitcoin.
+- Market data source is Upbit.
+- Raw market data should remain close to the official Upbit payload format.
+
+2. Market data direction
+- WebSocket is for real-time market data.
+- REST API can later be used for historical data collection and backfilling.
+- Real Upbit ticker payload collection has already been tested once.
+- The project should not rely only on plain price history.
+- Additional market context fields from Upbit should also be considered.
+
+3. Current storage layout
+- Base folder: data analysis/data
+- Raw ticker JSON folder: data analysis/data/raw/ticker
+- Local DuckDB file: data analysis/data/db/research.duckdb
+- Real ticker raw table: upbit_ticker_raw
+
+4. Trading environment direction
+- The model is NOT intended to be a single-position-only agent.
+- Additional buys should be possible.
+- Partial profit taking should be possible.
+- The model should eventually decide how much capital to allocate by itself.
+- This means the environment should be portfolio-allocation oriented, not one-shot buy/sell only.
+
+5. Action design
+- Confirmed direction: target_position_ratio
+- Action range: [0, 1]
+- Meaning:
+  0 = all cash
+  1 = all BTC
+- The environment should rebalance automatically toward the target ratio.
+- This action design naturally supports:
+  additional buys
+  partial exits
+  hold
+  full exit
+  full entry
+
+6. Execution timing
+- Confirmed direction: decide using data up to time t, execute at t+1 open.
+- Purpose:
+  reduce future information leakage
+  keep the backtest / RL environment rules consistent
+- Current stage uses an execution assumption, not a real order-matching engine.
+
+7. Reward design
+- Confirmed direction: total equity change based reward
+- Current preferred formula:
+  reward_t = net_equity_(t+1) - net_equity_t - holding_penalty_t
+- Fee rate: 0.05% per trade
+- Fees should be reflected directly in net equity at execution time.
+- Holding / time penalty direction:
+  reward penalty per minute = total_equity * (0.0005 / 1440)
+- Reward is intended to remain KRW-based.
+- Realized PnL is still useful as a metric, but not as the primary reward definition.
+
+8. Step frequency
+- Confirmed direction: 1-minute step
+- The agent should make a decision every 1 minute.
+- Important note:
+  step frequency and observation context length are different things.
+- Even though action happens every minute, the model should look back much further than only 120 minutes if needed.
+
+9. State design direction
+- State is still not fully fixed.
+- The state should NOT be only raw price history.
+- The state should likely be split into multiple blocks:
+  sequence block
+  context block
+  portfolio block
+
+10. Transformer role direction
+- Transformer usage is acceptable for learning repeated market structure patterns.
+- However, the Transformer should NOT represent the entire RL observation by itself.
+- Transformer is better used for the sequence block only.
+- Non-sequence contextual data should be handled separately and fused later.
+
+11. Candidate observation blocks
+- Sequence block:
+  recent 1-minute candle / structure sequence
+  returns
+  candle body and wick structure
+  volume
+  volatility-like features
+- Context block:
+  52-week high / low related features
+  daily / recent high-low structure
+  accumulated trading volume / value
+  market state information
+- Portfolio block:
+  current cash
+  BTC holdings
+  average entry price
+  current position ratio
+  total equity
+  unrealized PnL
+
+12. Example Upbit context fields considered useful
+- highest_52_week_price
+- highest_52_week_date
+- lowest_52_week_price
+- lowest_52_week_date
+- acc_trade_volume_24h
+- acc_trade_price_24h
+- market_state
+- market_warning
+- is_trading_suspended
+- ask_bid
+
+13. Important implementation rule
+- No future information should be included in state.
+- Future price movement may only be used for next-step transition and reward calculation.
+- Time-based train / validation / test split will be required later.
+
+14. Not fixed yet
+- Exact state feature list
+- Invalid action handling details
+- Cash shortage handling details
+- Minimum order size handling
+- Exact context window length
+- Exact model architecture
+- Exact training loop design
+
+15. Current practical takeaway
+- Keep raw market data close to official Upbit payload structure.
+- Separate raw storage from processed RL-ready features.
+- Use 1-minute decision steps.
+- Use target_position_ratio as the action structure.
+- Use t+1 open execution assumption.
+- Use total-equity-change-based reward with fee and holding penalty.
+- Use Transformer only as one part of the observation-processing pipeline, not as the entire RL state by itself.
+
+16. Reference RL repository decision
+- Selected reference repository: quant-rl-trading-agent
+- Reason:
+  PPO-based RL core
+  separate environment / agent / data handler structure
+  separates market features and portfolio features
+- This repository is treated as an architecture reference, not a direct copy target.
+- The following parts should be replaced for this project:
+  stock-oriented data loading
+  long/short action assumptions
+  discrete action design
+  stock-specific feature assumptions
+
+17. New project scaffold
+- New project folder created: bitcoin_rl_system
+- Main files:
+  bitcoin_rl_system/main.py
+  bitcoin_rl_system/data_handler.py
+  bitcoin_rl_system/trading_environment.py
+  bitcoin_rl_system/rl_agent.py
+  bitcoin_rl_system/ARCHITECTURE.md
+  bitcoin_rl_system/TRAINING_DATA_SCHEMA.md
+- Current intended wiring:
+  sequence block -> Transformer encoder
+  context block -> MLP
+  portfolio block -> MLP
+  fused latent -> PPO actor / critic heads
+
+18. Training data structure direction
+- Current first-pass design uses one unified processed feature table.
+- Suggested table concept:
+  rl_market_frame_1m
+- One row represents one timestamp and one market state.
+- The environment should construct observations as:
+  sequence block = recent N rows
+  context block = current row
+  portfolio block = environment internal state
+- Sequence block should include:
+  OHLCV
+  returns
+  candle body / wick features
+  volatility features
+  rolling high / low distance features
+- Context block should include:
+  52-week high / low related features
+  24h accumulated trade volume / trade price
+  market state / warning fields
+  daily high / low distance features
+- Portfolio block should include:
+  cash
+  BTC holdings
+  average entry price
+  position ratio
+  total equity
+  unrealized and realized PnL
+- Leakage prevention rule remains critical:
+  every feature must be based only on information available up to time t
+
+19. Current practical training usage idea
+- Step 1:
+  collect or backfill Upbit market data
+- Step 2:
+  build 1-minute OHLCV base table
+- Step 3:
+  derive sequence and context features into a processed training frame
+- Step 4:
+  data_handler.py loads the processed frame and splits it by time
+- Step 5:
+  trading_environment.py constructs rolling observations and maintains portfolio state
+- Step 6:
+  rl_agent.py runs PPO with Transformer only on the sequence branch
+- Step 7:
+  evaluation is performed only on later unseen periods
