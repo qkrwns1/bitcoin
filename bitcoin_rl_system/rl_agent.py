@@ -175,7 +175,7 @@ class BitcoinRLAgent:
         self.model.learn(
             total_timesteps=self.config.total_timesteps,
             callback=callbacks,
-            progress_bar=True,
+            progress_bar=False,
         )
         return self.model
 

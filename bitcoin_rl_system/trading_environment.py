@@ -190,8 +190,9 @@ class BitcoinTradingEnvironment(gym.Env):
 
         next_close = self._next_close()
         next_equity = self._total_equity(next_close)
-        holding_penalty = prev_equity * (0.0005 / 1440) * self.config.step_minutes
-        reward = next_equity - prev_equity - holding_penalty
+        # 매 스텝 무조건 부과 — 연 -20% 기준 분당 차감률
+        time_penalty = prev_equity * (0.20 / 525_600) * self.config.step_minutes
+        reward = next_equity - prev_equity - time_penalty
 
         self.current_step += 1
         terminated = self.current_step >= len(self.market_frame) - 2
@@ -200,7 +201,7 @@ class BitcoinTradingEnvironment(gym.Env):
             "target_ratio": target_ratio,
             "prev_equity": prev_equity,
             "next_equity": next_equity,
-            "holding_penalty": holding_penalty,
+            "time_penalty": time_penalty,
             "cash": self.cash,
             "btc_holding": self.btc_holding,
         }
