@@ -198,11 +198,13 @@ class BitcoinTradingEnvironment(gym.Env):
         equity_change = next_equity - prev_equity
         price_return = (next_close - execution_price) / execution_price if execution_price > 0 else 0.0
 
-        opportunity_penalty = 0.0
-        if prev_ratio < 0.01 and price_return > self.config.fee_rate:
-            opportunity_penalty = prev_equity * price_return * self.config.opportunity_penalty_scale
+        pct_return = equity_change / prev_equity if prev_equity > 0 else 0.0
 
-        reward = equity_change - opportunity_penalty
+        opportunity_penalty = 0.0
+        if price_return > self.config.fee_rate:
+            opportunity_penalty = price_return * (1.0 - prev_ratio) * self.config.opportunity_penalty_scale
+
+        reward = pct_return - opportunity_penalty
         position_value = self.btc_holding * next_close
         position_ratio = 0.0 if next_equity <= 0 else position_value / next_equity
 
@@ -216,6 +218,7 @@ class BitcoinTradingEnvironment(gym.Env):
             "prev_equity": prev_equity,
             "next_equity": next_equity,
             "equity_change": equity_change,
+            "pct_return": pct_return,
             "opportunity_penalty": opportunity_penalty,
             "trade_executed": trade_executed,
             "cash": self.cash,
