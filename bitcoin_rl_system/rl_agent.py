@@ -27,6 +27,7 @@ class AgentConfig:
     n_steps: int = 4096
     batch_size: int = 128
     n_epochs: int = 5
+    clip_range: float = 0.1
     total_timesteps: int = 5_000_000
     save_dir: Path = field(default_factory=lambda: Path("checkpoints"))
     tensorboard_log: Path = field(default_factory=lambda: Path("runs"))
@@ -139,6 +140,7 @@ class BitcoinRLAgent:
             n_steps=self.config.n_steps,
             batch_size=self.config.batch_size,
             n_epochs=self.config.n_epochs,
+            clip_range=self.config.clip_range,
             ent_coef=0.01,
             verbose=1,
             policy_kwargs=policy_kwargs,

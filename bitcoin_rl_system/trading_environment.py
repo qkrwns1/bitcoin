@@ -21,6 +21,8 @@ class EnvironmentConfig:
     action_low: float = 0.0
     action_high: float = 1.0
     sequence_length: int = 60
+    min_rebalance_value: float = 5_000.0
+    opportunity_penalty_scale: float = 0.3
 
 
 class BitcoinTradingEnvironment(gym.Env):
@@ -145,19 +147,19 @@ class BitcoinTradingEnvironment(gym.Env):
         self.realized_pnl = 0.0
         return self._observation(), {}
 
-    def _rebalance_to_target(self, target_ratio: float, execution_price: float) -> None:
+    def _rebalance_to_target(self, target_ratio: float, execution_price: float) -> bool:
         total_equity = self._total_equity(execution_price)
         target_value = total_equity * target_ratio
         current_value = self.btc_holding * execution_price
         diff_value = target_value - current_value
 
-        if abs(diff_value) < 1.0:
-            return
+        if abs(diff_value) < self.config.min_rebalance_value:
+            return False
 
         if diff_value > 0:
             affordable_value = min(diff_value, self.cash / (1.0 + self.config.fee_rate))
             if affordable_value <= 0:
-                return
+                return False
             fee = affordable_value * self.config.fee_rate
             btc_bought = affordable_value / execution_price
             total_cost = affordable_value + fee
@@ -165,43 +167,44 @@ class BitcoinTradingEnvironment(gym.Env):
             self.cash -= total_cost
             self.btc_holding += btc_bought
             self.avg_entry_price = (previous_cost_basis + affordable_value) / self.btc_holding
-        else:
-            sell_value = min(-diff_value, current_value)
-            if sell_value <= 0:
-                return
-            btc_sold = sell_value / execution_price
-            fee = sell_value * self.config.fee_rate
-            proceeds = sell_value - fee
-            realized = btc_sold * (execution_price - self.avg_entry_price) - fee
-            self.cash += proceeds
-            self.btc_holding -= btc_sold
-            self.realized_pnl += realized
-            if self.btc_holding <= 1e-12:
-                self.btc_holding = 0.0
-                self.avg_entry_price = 0.0
+            return True
+
+        sell_value = min(-diff_value, current_value)
+        if sell_value <= 0:
+            return False
+        btc_sold = sell_value / execution_price
+        fee = sell_value * self.config.fee_rate
+        proceeds = sell_value - fee
+        realized = btc_sold * (execution_price - self.avg_entry_price) - fee
+        self.cash += proceeds
+        self.btc_holding -= btc_sold
+        self.realized_pnl += realized
+        if self.btc_holding <= 1e-12:
+            self.btc_holding = 0.0
+            self.avg_entry_price = 0.0
+        return True
 
     def step(self, action: np.ndarray):
         target_ratio = float(np.clip(action[0], self.config.action_low, self.config.action_high))
 
         execution_price = self._next_open()
-        # prev_equity: open[t+1]에서 리밸런스 직전 자산가치 — close[t]→open[t+1] 갭 노이즈 제거
         prev_equity = self._total_equity(execution_price)
-
-        # 리밸런스 전 현재 BTC 비율
         prev_ratio = (self.btc_holding * execution_price) / prev_equity if prev_equity > 0 else 0.0
 
-        self._rebalance_to_target(target_ratio, execution_price)
+        trade_executed = self._rebalance_to_target(target_ratio, execution_price)
 
         next_close = self._next_close()
         next_equity = self._total_equity(next_close)
+        equity_change = next_equity - prev_equity
+        price_return = (next_close - execution_price) / execution_price if execution_price > 0 else 0.0
 
-        # 연 60% 기준 분당 홀딩 패널티 (강화)
-        time_penalty = prev_equity * (0.60 / 525_600) * self.config.step_minutes
+        opportunity_penalty = 0.0
+        if prev_ratio < 0.01 and price_return > self.config.fee_rate:
+            opportunity_penalty = prev_equity * price_return * self.config.opportunity_penalty_scale
 
-        # 확신 있는 포지션 보너스 (0.5 중립에서 멀수록)
-        conviction_bonus = abs(target_ratio - 0.5) * prev_equity * 0.0001
-
-        reward = next_equity - prev_equity - time_penalty + conviction_bonus
+        reward = equity_change - opportunity_penalty
+        position_value = self.btc_holding * next_close
+        position_ratio = 0.0 if next_equity <= 0 else position_value / next_equity
 
         self.current_step += 1
         terminated = self.current_step >= len(self.market_frame) - 2
@@ -209,9 +212,12 @@ class BitcoinTradingEnvironment(gym.Env):
         row = self.market_frame.loc[self.current_step]
         info = {
             "target_ratio": target_ratio,
+            "position_ratio": position_ratio,
             "prev_equity": prev_equity,
             "next_equity": next_equity,
-            "time_penalty": time_penalty,
+            "equity_change": equity_change,
+            "opportunity_penalty": opportunity_penalty,
+            "trade_executed": trade_executed,
             "cash": self.cash,
             "btc_holding": self.btc_holding,
             "open": float(row["open"]),

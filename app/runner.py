@@ -12,7 +12,6 @@ from typing import Awaitable, Callable
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from stable_baselines3 import PPO
-from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import VecNormalize
 
@@ -25,59 +24,22 @@ BroadcastFn = Callable[[dict], Awaitable[None]]
 _MIN_BROADCAST_INTERVAL = 0.05  # 20 updates/sec max
 
 
-class _StepCallback(BaseCallback):
+class _InferenceStreamer:
     def __init__(
         self,
         broadcast: BroadcastFn,
         loop: asyncio.AbstractEventLoop,
-        model_path: Path,
-        vecnorm_path: Path,
-        save_freq: int = 5_000,
     ) -> None:
-        super().__init__()
         self._broadcast = broadcast
         self._loop = loop
-        self._model_path = model_path
-        self._vecnorm_path = vecnorm_path
-        self._save_freq = save_freq
         self._last_sent = 0.0
 
-    def _emit(self, data: dict) -> None:
-        asyncio.run_coroutine_threadsafe(self._broadcast(data), self._loop)
-
-    def _on_step(self) -> bool:
+    def emit(self, data: dict) -> None:
         now = time.monotonic()
         if now - self._last_sent < _MIN_BROADCAST_INTERVAL:
-            return True
+            return
         self._last_sent = now
-
-        info = (self.locals.get("infos") or [{}])[0]
-        rewards = self.locals.get("rewards") or [0.0]
-
-        self._emit({
-            "type": "step",
-            "step": self.num_timesteps,
-            "n_updates": self.model.n_updates,
-            "reward": float(rewards[0]),
-            "target_ratio": float(info.get("target_ratio", 0)),
-            "equity": float(info.get("next_equity", 0)),
-            "cash": float(info.get("cash", 0)),
-            "btc_holding": float(info.get("btc_holding", 0)),
-            "open": float(info.get("open", 0)),
-            "high": float(info.get("high", 0)),
-            "low": float(info.get("low", 0)),
-            "close": float(info.get("close", 0)),
-            "ts": str(info.get("ts", "")),
-        })
-
-        if self.num_timesteps % self._save_freq == 0:
-            self.model.save(str(self._model_path))
-            self.training_env.save(str(self._vecnorm_path))
-
-        return True
-
-    def _on_rollout_end(self) -> None:
-        self._emit({"type": "update", "n_updates": self.model.n_updates})
+        asyncio.run_coroutine_threadsafe(self._broadcast(data), self._loop)
 
 
 class AgentRunner:
@@ -120,21 +82,40 @@ class AgentRunner:
 
         vec_env = make_vec_env(BitcoinTradingEnvironment, n_envs=1, env_kwargs=env_kwargs)
         vec_env = VecNormalize.load(str(self.vecnorm_path), vec_env)
-        vec_env.training = True   # 온라인 학습: VecNormalize 통계도 계속 갱신
-        vec_env.norm_reward = True
+        vec_env.training = False
+        vec_env.norm_reward = False
 
         model = PPO.load(str(self.model_path), env=vec_env)
+        streamer = _InferenceStreamer(broadcast, loop)
+        obs = vec_env.reset()
+        step = 0
 
-        cb = _StepCallback(
-            broadcast, loop,
-            self.model_path, self.vecnorm_path,
-            save_freq=5_000,
-        )
+        while True:
+            action, _ = model.predict(obs, deterministic=True)
+            obs, rewards, dones, infos = vec_env.step(action)
+            info = infos[0]
+            reward = rewards[0]
+            step += 1
 
-        # 사실상 무한 학습 — 에피소드 끝나면 자동 reset 후 재시작
-        model.learn(
-            total_timesteps=100_000_000,
-            callback=cb,
-            reset_num_timesteps=False,
-            progress_bar=False,
-        )
+            streamer.emit({
+                "type": "step",
+                "step": step,
+                "n_updates": 0,
+                "reward": float(reward),
+                "target_ratio": float(info.get("target_ratio", 0.0)),
+                "position_ratio": float(info.get("position_ratio", 0.0)),
+                "equity": float(info.get("next_equity", 0.0)),
+                "cash": float(info.get("cash", 0.0)),
+                "btc_holding": float(info.get("btc_holding", 0.0)),
+                "open": float(info.get("open", 0.0)),
+                "high": float(info.get("high", 0.0)),
+                "low": float(info.get("low", 0.0)),
+                "close": float(info.get("close", 0.0)),
+                "ts": str(info.get("ts", "")),
+                "trade_executed": bool(info.get("trade_executed", False)),
+            })
+
+            if dones[0]:
+                streamer.emit({"type": "update", "n_updates": 0})
+                obs = vec_env.reset()
+                step = 0
