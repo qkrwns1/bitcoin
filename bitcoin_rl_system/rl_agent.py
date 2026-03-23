@@ -23,8 +23,8 @@ class AgentConfig:
     context_hidden_dim: int = 64
     portfolio_hidden_dim: int = 64
     fused_hidden_dim: int = 256
-    learning_rate: float = 3e-4
-    n_steps: int = 2048
+    learning_rate: float = 1e-4
+    n_steps: int = 4096
     batch_size: int = 256
     total_timesteps: int = 5_000_000
     save_dir: Path = field(default_factory=lambda: Path("checkpoints"))
@@ -137,6 +137,8 @@ class BitcoinRLAgent:
             learning_rate=self.config.learning_rate,
             n_steps=self.config.n_steps,
             batch_size=self.config.batch_size,
+            n_epochs=20,
+            ent_coef=0.01,
             verbose=1,
             policy_kwargs=policy_kwargs,
             tensorboard_log=str(self.config.tensorboard_log),

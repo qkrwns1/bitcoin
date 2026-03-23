@@ -186,13 +186,22 @@ class BitcoinTradingEnvironment(gym.Env):
         execution_price = self._next_open()
         # prev_equity: open[t+1]에서 리밸런스 직전 자산가치 — close[t]→open[t+1] 갭 노이즈 제거
         prev_equity = self._total_equity(execution_price)
+
+        # 리밸런스 전 현재 BTC 비율
+        prev_ratio = (self.btc_holding * execution_price) / prev_equity if prev_equity > 0 else 0.0
+
         self._rebalance_to_target(target_ratio, execution_price)
 
         next_close = self._next_close()
         next_equity = self._total_equity(next_close)
-        # 매 스텝 무조건 부과 — 연 -20% 기준 분당 차감률
-        time_penalty = prev_equity * (0.20 / 525_600) * self.config.step_minutes
-        reward = next_equity - prev_equity - time_penalty
+
+        # 연 60% 기준 분당 홀딩 패널티 (강화)
+        time_penalty = prev_equity * (0.60 / 525_600) * self.config.step_minutes
+
+        # 확신 있는 포지션 보너스 (0.5 중립에서 멀수록)
+        conviction_bonus = abs(target_ratio - 0.5) * prev_equity * 0.0001
+
+        reward = next_equity - prev_equity - time_penalty + conviction_bonus
 
         self.current_step += 1
         terminated = self.current_step >= len(self.market_frame) - 2
