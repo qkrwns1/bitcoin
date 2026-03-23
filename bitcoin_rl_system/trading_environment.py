@@ -21,8 +21,8 @@ class EnvironmentConfig:
     sequence_length: int = 60
     # 매수 시 총 자본 대비 BTC 투자 비율
     btc_target_ratio: float = 0.9
-    # 최소 보유 스텝 (1분봉 × 15 = 15분)
-    min_hold_steps: int = 15
+    # 최소 보유 스텝 (1분봉 × 5 = 5분) — 손절 허용, 즉각 매매만 방지
+    min_hold_steps: int = 5
     # 보유 중 미실현 손익 신호 가중치 (value fn 학습 보조)
     hold_signal_scale: float = 0.01
     # 포지션 없을 때 기회비용 가중치 (진입 유도)
@@ -254,9 +254,10 @@ class BitcoinTradingEnvironment(gym.Env):
                 if execution_price > 0
                 else 0.0
             )
-            if self.in_position and self.avg_entry_price > 0:
-                unrealized_pct = (execution_price - self.avg_entry_price) / self.avg_entry_price
-                reward = unrealized_pct * self.config.hold_signal_scale
+            if self.in_position:
+                # 이번 스텝에서 가격이 오르면 +, 내리면 -
+                # → 에이전트가 "지금 들고 있는 게 이득인가?" 를 즉각 학습
+                reward = price_return * self.config.hold_signal_scale
             else:
                 # 포지션 없을 때 가격이 오르면 소폭 패널티 (진입 유도)
                 reward = -max(price_return, 0.0) * self.config.opportunity_scale
