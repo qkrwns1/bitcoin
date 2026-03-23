@@ -91,6 +91,7 @@ class AgentRunner:
         step = 0
 
         while True:
+            t0 = time.monotonic()
             action, _ = model.predict(obs, deterministic=True)
             obs, rewards, dones, infos = vec_env.step(action)
             info = infos[0]
@@ -102,11 +103,15 @@ class AgentRunner:
                 "step": step,
                 "n_updates": 0,
                 "reward": float(reward),
-                "target_ratio": float(info.get("target_ratio", 0.0)),
+                "action": int(info.get("action", 0)),
+                "in_position": bool(info.get("in_position", False)),
+                "steps_in_position": int(info.get("steps_in_position", 0)),
                 "position_ratio": float(info.get("position_ratio", 0.0)),
                 "equity": float(info.get("next_equity", 0.0)),
                 "cash": float(info.get("cash", 0.0)),
                 "btc_holding": float(info.get("btc_holding", 0.0)),
+                "avg_entry_price": float(info.get("avg_entry_price", 0.0)),
+                "realized_pnl_step": float(info.get("realized_pnl_step", 0.0)),
                 "open": float(info.get("open", 0.0)),
                 "high": float(info.get("high", 0.0)),
                 "low": float(info.get("low", 0.0)),
@@ -114,6 +119,11 @@ class AgentRunner:
                 "ts": str(info.get("ts", "")),
                 "trade_executed": bool(info.get("trade_executed", False)),
             })
+
+            # 초당 10스텝으로 제한 (0.1초/스텝)
+            elapsed = time.monotonic() - t0
+            if elapsed < 0.1:
+                time.sleep(0.1 - elapsed)
 
             if dones[0]:
                 streamer.emit({"type": "update", "n_updates": 0})

@@ -285,6 +285,56 @@
     }
     .fstat .fl { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; }
     .fstat .fv { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ─── SIM BADGE ──────────────────────────── */
+    .sim-badge {
+      font-size: 10px; font-weight: 700;
+      letter-spacing: .08em;
+      padding: 2px 7px; border-radius: 4px;
+      background: rgba(88,166,255,.15);
+      color: var(--blue);
+      border: 1px solid rgba(88,166,255,.3);
+    }
+
+    /* ─── REWARD DISPLAY ─────────────────────── */
+    .reward-row {
+      display: flex; justify-content: space-between;
+      align-items: center; padding: 6px 0;
+      border-top: 1px solid var(--border);
+      margin-top: 8px; font-size: 12px;
+    }
+    .reward-row .k { color: var(--muted); }
+    .reward-row .rv { font-size: 14px; font-weight: 700; }
+
+    /* ─── LOG PANEL ──────────────────────────── */
+    .log-card {
+      padding: 14px 16px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .log-list {
+      flex: 1;
+      overflow-y: auto;
+      font-size: 11px;
+      font-family: 'SF Mono', 'Consolas', monospace;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+    .log-entry {
+      display: flex; gap: 6px; align-items: baseline;
+      padding: 2px 0;
+      border-bottom: 1px solid rgba(48,54,61,.5);
+      white-space: nowrap; overflow: hidden;
+    }
+    .log-entry .lt  { color: var(--dim); flex-shrink: 0; width: 42px; }
+    .log-entry .la  { flex-shrink: 0; width: 36px; font-weight: 600; }
+    .log-entry .lr  { margin-left: auto; flex-shrink: 0; font-weight: 500; }
+    .log-entry .leq { color: var(--muted); flex-shrink: 0; }
+    .buy  { color: var(--green); }
+    .sell { color: var(--red); }
+    .hold { color: var(--dim); }
   </style>
 </head>
 
@@ -301,6 +351,7 @@
     <div class="dot waiting" id="dot"></div>
     <span id="status-text">연결 중...</span>
   </div>
+  <span class="sim-badge">SIMULATION</span>
   <div class="spacer"></div>
   <div class="live-price">
     <span class="price-label">KRW-BTC</span>
@@ -360,21 +411,27 @@
 
       <!-- Model stats -->
       <div class="card">
-        <div class="card-title">모델 (온라인 학습 중)</div>
+        <div class="card-title">모델 (추론 중)</div>
         <div class="model-grid">
           <div class="stat">
-            <div class="sl">스텝</div>
+            <div class="sl">시뮬 스텝</div>
             <div class="sv" id="step-val">-</div>
           </div>
           <div class="stat">
-            <div class="sl">PPO 업데이트</div>
-            <div class="sv" id="update-val">-</div>
-          </div>
-          <div class="stat" style="grid-column:1/-1">
-            <div class="sl">마지막 리워드</div>
-            <div class="sv" id="reward-val">-</div>
+            <div class="sl">매매 횟수</div>
+            <div class="sv" id="trade-count-val">0</div>
           </div>
         </div>
+        <div class="reward-row">
+          <span class="k">마지막 리워드</span>
+          <span class="rv" id="reward-val">-</span>
+        </div>
+      </div>
+
+      <!-- Live log -->
+      <div class="log-card">
+        <div class="card-title">실시간 로그</div>
+        <div class="log-list" id="log-list"></div>
       </div>
 
     </div><!-- /model-panel -->
@@ -412,11 +469,12 @@
 const INITIAL_EQUITY = 1_000_000;
 
 let state = {
-  step: 0, nUpdates: 0,
-  equity: INITIAL_EQUITY, cash: INITIAL_EQUITY, btcHolding: 0,
-  targetRatio: 0, reward: 0,
+  step: 0,
+  equity: INITIAL_EQUITY, cash: INITIAL_EQUITY, btc_holding: 0,
+  target_ratio: 0, reward: 0,
   open: 0, high: 0, low: 0, close: 0, ts: '',
 };
+let tradeCount = 0;
 
 // ───────────────────────────────────────────
 // Chart setup
@@ -529,20 +587,24 @@ function render() {
   setC('equity-pnl', 'equity-sub ' + cls(pnl));
 
   // Position
-  const rp = (d.targetRatio * 100).toFixed(1) + '%';
+  const rp = ((d.target_ratio ?? 0) * 100).toFixed(1) + '%';
   set('ratio-val', rp);
   document.getElementById('gauge').style.width = rp;
-  set('btc-val', d.btcHolding.toFixed(6) + ' BTC');
+  set('btc-val', (d.btc_holding ?? 0).toFixed(6) + ' BTC');
   set('cash-val', fmt(d.cash));
 
   // Model stats
   set('step-val', d.step.toLocaleString());
-  set('update-val', d.nUpdates.toLocaleString());
+  if (d.trade_executed) tradeCount++;
+  set('trade-count-val', tradeCount.toLocaleString());
   const rwEl = document.getElementById('reward-val');
   if (rwEl) {
-    rwEl.textContent = d.reward.toFixed(5);
-    rwEl.className = 'sv ' + cls(d.reward);
+    rwEl.textContent = (d.reward >= 0 ? '+' : '') + d.reward.toFixed(5);
+    rwEl.className = 'rv ' + cls(d.reward);
   }
+
+  // Log
+  if (d.trade_executed || d.step % 500 === 0) addLog(d);
 
   // Footer
   set('ft-ts', d.ts ? d.ts.substring(0, 16) : '-');
@@ -576,6 +638,40 @@ function render() {
 }
 
 // ───────────────────────────────────────────
+// Live log
+// ───────────────────────────────────────────
+const MAX_LOG = 120;
+
+function addLog(d) {
+  const list = document.getElementById('log-list');
+  if (!list) return;
+
+  const ratio = (d.target_ratio ?? 0);
+  const prevRatio = addLog._prev ?? 0;
+  addLog._prev = ratio;
+
+  let action, cls;
+  if (d.trade_executed) {
+    if (ratio > prevRatio + 0.02) { action = 'BUY';  cls = 'buy'; }
+    else if (ratio < prevRatio - 0.02) { action = 'SELL'; cls = 'sell'; }
+    else { action = 'ADJ'; cls = 'hold'; }
+  } else {
+    action = 'HOLD'; cls = 'hold';
+  }
+
+  const ts = d.ts ? d.ts.substring(11, 16) : '--:--';
+  const rw = (d.reward >= 0 ? '+' : '') + d.reward.toFixed(4);
+  const eq = '₩' + Math.round((d.equity ?? 0) / 1000) + 'K';
+
+  const el = document.createElement('div');
+  el.className = 'log-entry';
+  el.innerHTML = `<span class="lt">${ts}</span><span class="la ${cls}">${action}</span><span class="lr ${d.reward >= 0 ? 'up' : 'dn'}">${rw}</span><span class="leq">${eq}</span>`;
+  list.prepend(el);
+
+  while (list.children.length > MAX_LOG) list.removeChild(list.lastChild);
+}
+
+// ───────────────────────────────────────────
 // WebSocket
 // ───────────────────────────────────────────
 const dotEl   = document.getElementById('dot');
@@ -599,8 +695,8 @@ function connect() {
 
   ws.onmessage = e => {
     const d = JSON.parse(e.data);
-    if (d.type === 'step')   scheduleRender(d);
-    if (d.type === 'update') set('update-val', d.n_updates.toLocaleString());
+    if (d.type === 'step') scheduleRender(d);
+    if (d.type === 'update') { tradeCount = 0; }
   };
 
   ws.onclose = () => {

@@ -141,7 +141,7 @@ class BitcoinRLAgent:
             batch_size=self.config.batch_size,
             n_epochs=self.config.n_epochs,
             clip_range=self.config.clip_range,
-            ent_coef=0.005,
+            ent_coef=0.001,
             verbose=1,
             policy_kwargs=policy_kwargs,
             tensorboard_log=str(self.config.tensorboard_log),
