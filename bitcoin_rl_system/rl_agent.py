@@ -18,14 +18,15 @@ from stable_baselines3.common.vec_env import VecEnv
 @dataclass(slots=True)
 class AgentConfig:
     algorithm: str = "PPO"
-    transformer_layers: int = 2
-    transformer_hidden_dim: int = 128
-    context_hidden_dim: int = 64
-    portfolio_hidden_dim: int = 64
-    fused_hidden_dim: int = 256
-    learning_rate: float = 1e-4
+    transformer_layers: int = 1
+    transformer_hidden_dim: int = 64
+    context_hidden_dim: int = 32
+    portfolio_hidden_dim: int = 32
+    fused_hidden_dim: int = 128
+    learning_rate: float = 3e-5
     n_steps: int = 4096
-    batch_size: int = 256
+    batch_size: int = 128
+    n_epochs: int = 5
     total_timesteps: int = 5_000_000
     save_dir: Path = field(default_factory=lambda: Path("checkpoints"))
     tensorboard_log: Path = field(default_factory=lambda: Path("runs"))
@@ -137,7 +138,7 @@ class BitcoinRLAgent:
             learning_rate=self.config.learning_rate,
             n_steps=self.config.n_steps,
             batch_size=self.config.batch_size,
-            n_epochs=20,
+            n_epochs=self.config.n_epochs,
             ent_coef=0.01,
             verbose=1,
             policy_kwargs=policy_kwargs,

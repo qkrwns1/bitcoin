@@ -20,7 +20,7 @@ class EnvironmentConfig:
     step_minutes: int = 1
     action_low: float = 0.0
     action_high: float = 1.0
-    sequence_length: int = 360
+    sequence_length: int = 60
 
 
 class BitcoinTradingEnvironment(gym.Env):
