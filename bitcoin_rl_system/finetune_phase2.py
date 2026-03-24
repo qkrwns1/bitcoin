@@ -17,7 +17,7 @@ import numpy as np
 import torch
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.vec_env import VecNormalize
+from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -33,7 +33,7 @@ PHASE2_CKPT    = _HERE / "checkpoints" / "phase2_model"
 PHASE2_VECNORM = _HERE / "checkpoints" / "phase2_vec_normalize.pkl"
 RUNS_DIR       = _HERE / "runs"
 
-N_ENVS = 2   # BeliefEnv는 FAISS 검색 overhead → 환경 수 줄임
+N_ENVS = 4   # SubprocVecEnv로 CPU 코어 병렬 사용
 N_BELIEF = 3
 
 
@@ -109,7 +109,8 @@ def _make_phase2_vec_env(market_frame, layout, seq_len):
         "env_config": EnvironmentConfig(sequence_length=seq_len),
         "seq_len": seq_len,
     }
-    return make_vec_env(make_belief_env, n_envs=N_ENVS, env_kwargs=env_kwargs)
+    return make_vec_env(make_belief_env, n_envs=N_ENVS, env_kwargs=env_kwargs,
+                        vec_env_cls=SubprocVecEnv)
 
 
 # ── Main ──────────────────────────────────────────────────────────────
@@ -132,7 +133,7 @@ def main() -> None:
     print(handler.summary())
 
     # ── Phase 2 환경 생성 ─────────────────────────────────────────
-    print("\nPhase 2 환경 생성 (BeliefAugmentedEnv × 2)...")
+    print(f"\nPhase 2 환경 생성 (BeliefAugmentedEnv × {N_ENVS}, SubprocVecEnv)...")
     train_vec = _make_phase2_vec_env(splits["train"], layout, seq_len)
 
     # ── Phase 1 VecNormalize → 확장 후 적용 ───────────────────────
@@ -147,20 +148,22 @@ def main() -> None:
 
     # ── Phase 2 PPO 모델 신규 빌드 ────────────────────────────────
     print("Phase 2 PPO 모델 빌드...")
-    # raw 환경에서 dim 파악 (Monitor 한 겹만 벗김 → BeliefAugmentedEnv 유지)
-    from bitcoin_rl_system.belief_environment import BeliefAugmentedEnv
-    raw_env = train_vec.envs[0]
-    if hasattr(raw_env, "env"):
-        raw_env = raw_env.env   # Monitor → BeliefAugmentedEnv (portfolio_dim=10)
-    # gym.Wrapper 더 벗기지 않음 — BeliefAugmentedEnv.portfolio_dim = 10
+    # SubprocVecEnv는 envs 직접 접근 불가 → observation_space로 dim 직접 지정
+    # BeliefAugmentedEnv: portfolio_dim=10, sequence_length/dim/context_dim은 base env와 동일
+    _base_cfg = DataConfig()
+    _base_layout = layout
+    _portfolio_dim = len(_base_layout["portfolio"]) + N_BELIEF   # 7 + 3 = 10
+    _seq_len  = seq_len
+    _seq_dim  = len(_base_layout["sequence"])
+    _ctx_dim  = len(_base_layout["context"])
 
     policy_kwargs = {
         "features_extractor_class": SequenceContextFeatureExtractor,
         "features_extractor_kwargs": {
-            "sequence_length":      raw_env.sequence_length,
-            "sequence_dim":         raw_env.sequence_dim,
-            "context_dim":          raw_env.context_dim,
-            "portfolio_dim":        raw_env.portfolio_dim,   # 10
+            "sequence_length":      _seq_len,
+            "sequence_dim":         _seq_dim,
+            "context_dim":          _ctx_dim,
+            "portfolio_dim":        _portfolio_dim,   # 10
             "transformer_hidden_dim": 128,
             "transformer_layers":   2,
             "context_hidden_dim":   64,
@@ -174,8 +177,8 @@ def main() -> None:
         "MlpPolicy",
         train_env,
         learning_rate=args.lr,
-        n_steps=2048,
-        batch_size=256,
+        n_steps=4096,    # 4096 × 4 envs = 16384 스텝/업데이트 → GPU 사용률 증가
+        batch_size=512,
         n_epochs=5,
         clip_range=0.1,
         ent_coef=0.001,
@@ -183,8 +186,8 @@ def main() -> None:
         policy_kwargs=policy_kwargs,
         tensorboard_log=str(RUNS_DIR),
     )
-    print(f"  portfolio_dim: {raw_env.portfolio_dim}")
-    print(f"  obs_dim:       {raw_env.observation_space.shape[0]}")
+    print(f"  portfolio_dim: {_portfolio_dim}")
+    print(f"  obs_dim:       {_seq_len * _seq_dim + _ctx_dim + _portfolio_dim}")
 
     # ── Phase 1 → Phase 2 가중치 이전 ────────────────────────────
     print("\nPhase 1 체크포인트 로드: ", PHASE1_MODEL)
