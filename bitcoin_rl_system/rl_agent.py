@@ -24,8 +24,8 @@ class AgentConfig:
     portfolio_hidden_dim: int = 32
     fused_hidden_dim: int = 128
     learning_rate: float = 3e-5
-    n_steps: int = 4096
-    batch_size: int = 128
+    n_steps: int = 2048   # n_envs=4 × 2048 = 8192 스텝/업데이트
+    batch_size: int = 256
     n_epochs: int = 5
     clip_range: float = 0.1
     total_timesteps: int = 5_000_000

@@ -29,7 +29,7 @@ def _make_vec_env(market_frame, layout, seq_len) -> make_vec_env:
         "portfolio_features": layout["portfolio"],
         "config": EnvironmentConfig(sequence_length=seq_len),
     }
-    return make_vec_env(BitcoinTradingEnvironment, n_envs=1, env_kwargs=env_kwargs)
+    return make_vec_env(BitcoinTradingEnvironment, n_envs=4, env_kwargs=env_kwargs)
 
 
 def build_eval_env(market_frame, layout, seq_len, vecnorm_path: Path = VECNORM_PATH):
