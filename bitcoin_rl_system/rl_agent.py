@@ -18,11 +18,11 @@ from stable_baselines3.common.vec_env import VecEnv
 @dataclass(slots=True)
 class AgentConfig:
     algorithm: str = "PPO"
-    transformer_layers: int = 1
-    transformer_hidden_dim: int = 64
-    context_hidden_dim: int = 32
+    transformer_layers: int = 2
+    transformer_hidden_dim: int = 128
+    context_hidden_dim: int = 64
     portfolio_hidden_dim: int = 32
-    fused_hidden_dim: int = 128
+    fused_hidden_dim: int = 256
     learning_rate: float = 3e-5
     n_steps: int = 2048   # n_envs=4 × 2048 = 8192 스텝/업데이트
     batch_size: int = 256
@@ -131,7 +131,7 @@ class BitcoinRLAgent:
                 "portfolio_hidden_dim": self.config.portfolio_hidden_dim,
                 "fused_hidden_dim": self.config.fused_hidden_dim,
             },
-            "net_arch": dict(pi=[128, 64], vf=[128, 64]),
+            "net_arch": dict(pi=[256, 128], vf=[256, 128]),
         }
         self.model = PPO(
             "MlpPolicy",
