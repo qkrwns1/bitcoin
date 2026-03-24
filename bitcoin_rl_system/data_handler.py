@@ -69,6 +69,7 @@ DEFAULT_PORTFOLIO_FEATURES = [
     "total_equity",
     "unrealized_pnl",
     "realized_pnl",
+    "total_fees_paid",
 ]
 
 

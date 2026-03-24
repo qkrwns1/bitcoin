@@ -130,7 +130,7 @@ def main() -> None:
 
     # train
     p_train = sub.add_parser("train", help="모델 학습")
-    p_train.add_argument("--timesteps", type=int, default=5_000_000)
+    p_train.add_argument("--timesteps", type=int, default=15_000_000)
     p_train.add_argument("--checkpoint-freq", type=int, default=100_000)
 
     # eval

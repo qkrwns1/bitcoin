@@ -23,7 +23,12 @@ class EnvironmentConfig:
     step_minutes: int = 1
     sequence_length: int = 60
     # 너무 소액 리밸런싱 방지 (수수료 낭비 차단)
-    min_rebalance_value: float = 5_000.0
+    min_rebalance_value: float = 50_000.0
+    # Reward = ret + reward_quad_scale * sign(ret) * ret²
+    # 선형 기반으로 수동 보유 동기 유지 + 제곱 보너스로 큰 수익 장려
+    reward_quad_scale: float = 200.0
+    # 거래 발생 시 고정 페널티 (잦은 소액 매매 억제)
+    trade_penalty: float = 0.0002
 
 
 class BitcoinTradingEnvironment(gym.Env):
@@ -93,6 +98,7 @@ class BitcoinTradingEnvironment(gym.Env):
         self.btc_holding: float = 0.0
         self.avg_entry_price: float = 0.0
         self.realized_pnl: float = 0.0
+        self.total_fees_paid: float = 0.0
         self.steps_since_rebalance: int = 0
         self.last_target_ratio: float = 0.0
 
@@ -139,7 +145,7 @@ class BitcoinTradingEnvironment(gym.Env):
         return seq
 
     def _portfolio_vector(self, mark_price: float) -> np.ndarray:
-        """7-dim 포트폴리오 벡터."""
+        """8-dim 포트폴리오 벡터."""
         ic = self.config.initial_cash
         total_equity = self._total_equity(mark_price)
         btc_value = self.btc_holding * mark_price
@@ -158,6 +164,7 @@ class BitcoinTradingEnvironment(gym.Env):
                 min(self.steps_since_rebalance / 60.0, 2.0),          # 마지막 거래 후 경과 (정규화)
                 total_equity / ic,                                     # 총자산 비율
                 self.realized_pnl / ic,                                # 실현손익 비율
+                self.total_fees_paid / ic,                             # 누적 수수료 비율 (fee awareness)
             ],
             dtype=np.float32,
         )
@@ -198,6 +205,7 @@ class BitcoinTradingEnvironment(gym.Env):
             self.cash -= affordable + fee
             self.btc_holding += btc_bought
             self.avg_entry_price = (prev_cost + affordable) / self.btc_holding
+            self.total_fees_paid += fee
             return True
 
         # 매도
@@ -211,6 +219,7 @@ class BitcoinTradingEnvironment(gym.Env):
         self.cash += proceeds
         self.btc_holding = max(0.0, self.btc_holding - btc_sold)
         self.realized_pnl += realized
+        self.total_fees_paid += fee
         if self.btc_holding < 1e-12:
             self.btc_holding = 0.0
             self.avg_entry_price = 0.0
@@ -225,6 +234,7 @@ class BitcoinTradingEnvironment(gym.Env):
         self.btc_holding = 0.0
         self.avg_entry_price = 0.0
         self.realized_pnl = 0.0
+        self.total_fees_paid = 0.0
         self.steps_since_rebalance = 0
         self.last_target_ratio = 0.0
         return self._observation(), {}
@@ -247,8 +257,14 @@ class BitcoinTradingEnvironment(gym.Env):
         next_close = self._next_close()
         next_equity = self._total_equity(next_close)
 
-        # 순수 자산 변화율 — 포지션 크기에 자연스럽게 비례
-        reward = (next_equity - prev_equity) / prev_equity if prev_equity > 0 else 0.0
+        # Reward = ret + quad_scale × sign(ret) × ret²  −  trade_penalty
+        # - 선형항: 소수익도 동기부여 유지 (수동적 무매매 방지)
+        # - 제곱항: 큰 수익에 지수적 보너스 (고확신 매매 장려)
+        # - trade_penalty: 매매 자체에 고정 비용 (잦은 소액 매매 억제)
+        raw_ret = (next_equity - prev_equity) / prev_equity if prev_equity > 0 else 0.0
+        quad_bonus = self.config.reward_quad_scale * np.sign(raw_ret) * raw_ret ** 2
+        trade_cost = self.config.trade_penalty if trade_executed else 0.0
+        reward = float(raw_ret + quad_bonus - trade_cost)
 
         btc_value = self.btc_holding * next_close
         position_ratio = btc_value / next_equity if next_equity > 0 else 0.0
