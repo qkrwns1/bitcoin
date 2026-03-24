@@ -3,791 +3,781 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bitcoin RL Dashboard</title>
+  <title>Bitcoin RL</title>
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg:       #0d1117;
-      --surface:  #161b22;
-      --surface2: #1c2128;
-      --border:   #30363d;
-      --orange:   #f7931a;
-      --green:    #3fb950;
-      --red:      #f85149;
-      --blue:     #58a6ff;
-      --purple:   #bc8cff;
-      --text:     #e6edf3;
-      --muted:    #8b949e;
-      --dim:      #6e7681;
+      --bg:      #0b0e11;
+      --s1:      #161a1e;
+      --s2:      #1c2127;
+      --bd:      #2b3139;
+      --orange:  #f0b90b;
+      --green:   #0ecb81;
+      --red:     #f6465d;
+      --blue:    #1890ff;
+      --text:    #eaecef;
+      --muted:   #848e9c;
+      --dim:     #5e6673;
     }
-
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-family: 'Inter', -apple-system, sans-serif;
       background: var(--bg);
       color: var(--text);
       height: 100vh;
       display: grid;
-      grid-template-rows: 56px 1fr 180px;
+      grid-template-rows: 56px 1fr 48px;
       overflow: hidden;
+      font-size: 13px;
     }
 
-    /* ─── HEADER ─────────────────────────────── */
+    /* ── HEADER ─────────────────────────────── */
     header {
       display: flex;
       align-items: center;
-      padding: 0 20px;
-      gap: 16px;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface);
+      padding: 0 16px;
+      gap: 0;
+      background: var(--s1);
+      border-bottom: 1px solid var(--bd);
     }
 
-    .logo {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 17px;
-      font-weight: 700;
-      color: var(--orange);
-      letter-spacing: -0.02em;
+    .hdr-logo {
+      display: flex; align-items: center; gap: 8px;
+      font-weight: 700; font-size: 15px; color: var(--orange);
+      padding-right: 20px;
+      border-right: 1px solid var(--bd);
+      margin-right: 20px;
+      white-space: nowrap;
     }
-
-    .logo-icon {
-      width: 28px;
-      height: 28px;
+    .logo-circle {
+      width: 26px; height: 26px; border-radius: 50%;
       background: var(--orange);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 14px;
-      font-weight: 800;
-      color: #000;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 13px; color: #000;
     }
 
-    .divider { width: 1px; height: 24px; background: var(--border); }
+    .hdr-symbol { font-size: 16px; font-weight: 700; margin-right: 16px; }
 
-    .status-row {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 12px;
-      color: var(--muted);
+    .hdr-price-block { margin-right: 24px; }
+    .hdr-price { font-size: 22px; font-weight: 700; line-height: 1; }
+
+    .hdr-stats { display: flex; gap: 24px; flex: 1; }
+    .hdr-stat { display: flex; flex-direction: column; gap: 2px; }
+    .hdr-stat .lbl { font-size: 11px; color: var(--muted); }
+    .hdr-stat .val { font-size: 13px; font-weight: 500; }
+
+    .hdr-right { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+
+    .conn-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--dim); flex-shrink: 0;
     }
-
-    .dot {
-      width: 7px; height: 7px;
-      border-radius: 50%;
-      background: var(--dim);
-      flex-shrink: 0;
-    }
-    .dot.active  { background: var(--green); box-shadow: 0 0 6px var(--green); }
-    .dot.waiting { background: var(--orange); animation: blink 1.2s ease-in-out infinite; }
-    .dot.offline { background: var(--red); }
-
+    .conn-dot.live   { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .conn-dot.wait   { background: var(--orange); animation: blink 1.2s infinite; }
+    .conn-dot.dead   { background: var(--red); }
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
 
-    .spacer { flex: 1; }
+    .conn-label { font-size: 12px; color: var(--muted); }
 
-    .live-price {
-      display: flex;
-      align-items: baseline;
-      gap: 10px;
-    }
-    .price-label { font-size: 11px; color: var(--dim); font-weight: 500; letter-spacing: 0.04em; }
-    .price-val   { font-size: 22px; font-weight: 700; transition: color .3s; }
-    .price-chg   {
-      font-size: 12px; font-weight: 500;
-      padding: 2px 8px; border-radius: 4px;
-      background: rgba(63,185,80,.12);
-      color: var(--green);
-    }
-    .price-chg.dn { background: rgba(248,81,73,.12); color: var(--red); }
-
-    /* ─── TF SWITCHER ────────────────────────── */
-    .tf-bar {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      padding: 0 12px;
-      height: 36px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      flex-shrink: 0;
+    .sim-tag {
+      font-size: 10px; font-weight: 700; letter-spacing: .08em;
+      padding: 2px 7px; border-radius: 3px;
+      background: rgba(24,144,255,.15);
+      color: var(--blue);
+      border: 1px solid rgba(24,144,255,.3);
     }
 
-    .tf-btn {
-      padding: 3px 10px;
-      border-radius: 5px;
-      border: 1px solid transparent;
-      background: transparent;
-      color: var(--muted);
-      font-size: 12px;
-      font-weight: 500;
-      font-family: inherit;
-      cursor: pointer;
-      transition: all .15s;
-    }
-    .tf-btn:hover  { color: var(--text); background: var(--surface2); }
-    .tf-btn.active { color: var(--orange); background: rgba(247,147,26,.1); border-color: rgba(247,147,26,.3); }
-
-    /* ─── MAIN ───────────────────────────────── */
+    /* ── MAIN ───────────────────────────────── */
     .main {
       display: grid;
-      grid-template-columns: 1fr 280px;
+      grid-template-columns: 1fr 300px;
       overflow: hidden;
     }
 
-    .charts-col {
+    /* Chart column */
+    .chart-col {
       display: grid;
       grid-template-rows: 36px 1fr 110px;
       overflow: hidden;
+      border-right: 1px solid var(--bd);
     }
 
-    #price-chart    { width: 100%; height: 100%; }
-    #position-chart {
-      width: 100%; height: 100%;
-      border-top: 1px solid var(--border);
+    .tf-bar {
+      display: flex; align-items: center; gap: 2px;
+      padding: 0 12px;
+      background: var(--s1);
+      border-bottom: 1px solid var(--bd);
     }
+    .tf-btn {
+      padding: 3px 10px; border-radius: 4px;
+      border: none; background: transparent;
+      color: var(--muted); font-size: 12px; font-weight: 500;
+      font-family: inherit; cursor: pointer; transition: all .15s;
+    }
+    .tf-btn:hover  { color: var(--text); background: var(--s2); }
+    .tf-btn.active { color: var(--orange); background: rgba(240,185,11,.1); }
 
-    /* ─── SIDE PANEL ─────────────────────────── */
+    #price-chart  { width: 100%; height: 100%; }
+    #equity-chart { width: 100%; height: 100%; border-top: 1px solid var(--bd); }
+
+    /* Side panel */
     .side {
-      border-left: 1px solid var(--border);
-      display: flex;
-      flex-direction: column;
-      gap: 0;
+      display: flex; flex-direction: column;
+      overflow: hidden;
+      background: var(--s1);
+    }
+
+    .side-scroll {
+      flex: 1;
       overflow-y: auto;
       scrollbar-width: thin;
-      scrollbar-color: var(--border) transparent;
+      scrollbar-color: var(--bd) transparent;
     }
 
     .card {
-      padding: 14px 16px;
-      border-bottom: 1px solid var(--border);
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--bd);
     }
-
     .card-title {
-      font-size: 10px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: var(--dim);
-      margin-bottom: 12px;
+      font-size: 10px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .1em;
+      color: var(--dim); margin-bottom: 10px;
     }
 
-    /* Portfolio card */
-    .equity-big {
-      font-size: 24px;
-      font-weight: 700;
-      line-height: 1;
-      margin-bottom: 5px;
-      letter-spacing: -0.02em;
-    }
-    .equity-sub { font-size: 12px; font-weight: 500; }
-    .up   { color: var(--green); }
-    .dn   { color: var(--red); }
-    .nu   { color: var(--muted); }
+    /* Portfolio */
+    .eq-big  { font-size: 22px; font-weight: 700; letter-spacing: -.02em; line-height: 1; margin-bottom: 4px; }
+    .eq-sub  { font-size: 12px; font-weight: 500; }
+    .up  { color: var(--green); }
+    .dn  { color: var(--red); }
+    .nu  { color: var(--muted); }
 
-    /* Position card */
-    .pos-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 8px;
-      font-size: 12px;
+    /* Position */
+    .ratio-levels {
+      display: flex; gap: 4px; margin-bottom: 10px;
     }
-    .pos-label { color: var(--muted); }
-    .pos-val   { font-size: 18px; font-weight: 700; color: var(--orange); }
-
-    .gauge-track {
-      height: 8px;
-      background: var(--surface2);
-      border-radius: 4px;
-      overflow: hidden;
-      margin-bottom: 12px;
+    .ratio-btn {
+      flex: 1; padding: 5px 0; border-radius: 4px;
+      border: 1px solid var(--bd);
+      background: var(--s2);
+      color: var(--muted); font-size: 11px; font-weight: 600;
+      text-align: center; transition: all .2s;
     }
-    .gauge-fill {
-      height: 100%;
-      border-radius: 4px;
-      background: linear-gradient(90deg, #3fb950, #f7931a, #f85149);
-      transition: width .4s cubic-bezier(.4,0,.2,1);
+    .ratio-btn.active {
+      background: rgba(240,185,11,.2);
+      border-color: var(--orange);
+      color: var(--orange);
     }
 
     .kv { display: flex; justify-content: space-between; padding: 3px 0; font-size: 12px; }
     .kv .k { color: var(--muted); }
     .kv .v { font-weight: 500; }
 
-    /* Model card */
-    .model-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-    }
-    .stat {
-      background: var(--surface2);
-      border-radius: 6px;
-      padding: 8px 10px;
-    }
-    .stat .sl { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 3px; }
-    .stat .sv { font-size: 14px; font-weight: 600; }
+    .divline { height: 1px; background: var(--bd); margin: 8px 0; }
 
-    /* No model state */
+    /* Agent */
+    .action-display {
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--s2); border-radius: 6px;
+      padding: 8px 12px; margin-bottom: 10px;
+    }
+    .action-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+    .action-val   { font-size: 18px; font-weight: 700; }
+
+    .stats-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+    }
+    .stat-box {
+      background: var(--s2); border-radius: 5px;
+      padding: 7px 10px;
+    }
+    .stat-box .sl { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 2px; }
+    .stat-box .sv { font-size: 13px; font-weight: 600; }
+
+    /* No model */
     .no-model {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      padding: 20px;
-      text-align: center;
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 8px; padding: 20px; text-align: center;
     }
-    .no-model .icon { font-size: 32px; }
-    .no-model h3 { font-size: 14px; font-weight: 600; }
-    .no-model p  { font-size: 12px; color: var(--dim); line-height: 1.5; }
+    .no-model .icon { font-size: 28px; }
+    .no-model h3 { font-size: 13px; font-weight: 600; }
+    .no-model p  { font-size: 11px; color: var(--dim); line-height: 1.6; }
     .no-model code {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 2px 6px;
-      font-size: 11px;
-      color: var(--blue);
+      background: var(--s2); border: 1px solid var(--bd);
+      border-radius: 3px; padding: 1px 5px;
+      font-size: 10px; color: var(--blue);
     }
 
-    /* ─── FOOTER ─────────────────────────────── */
-    footer {
-      border-top: 1px solid var(--border);
-      display: grid;
-      grid-template-columns: 1fr 280px;
-      overflow: hidden;
-    }
-
-    #equity-chart {
-      width: 100%; height: 100%;
-      border-right: 1px solid var(--border);
-    }
-
-    .footer-stats {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1px;
-      background: var(--border);
-    }
-    .fstat {
-      background: var(--bg);
-      padding: 10px 14px;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      gap: 2px;
-    }
-    .fstat .fl { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: .06em; }
-    .fstat .fv { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-    /* ─── SIM BADGE ──────────────────────────── */
-    .sim-badge {
-      font-size: 10px; font-weight: 700;
-      letter-spacing: .08em;
-      padding: 2px 7px; border-radius: 4px;
-      background: rgba(88,166,255,.15);
-      color: var(--blue);
-      border: 1px solid rgba(88,166,255,.3);
-    }
-
-    /* ─── REWARD DISPLAY ─────────────────────── */
-    .reward-row {
-      display: flex; justify-content: space-between;
-      align-items: center; padding: 6px 0;
-      border-top: 1px solid var(--border);
-      margin-top: 8px; font-size: 12px;
-    }
-    .reward-row .k { color: var(--muted); }
-    .reward-row .rv { font-size: 14px; font-weight: 700; }
-
-    /* ─── LOG PANEL ──────────────────────────── */
-    .log-card {
-      padding: 14px 16px;
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      min-height: 0;
+    /* Log */
+    .log-wrap {
+      flex: 1; display: flex; flex-direction: column;
+      min-height: 140px; border-bottom: none;
     }
     .log-list {
-      flex: 1;
-      overflow-y: auto;
+      flex: 1; overflow-y: auto;
       font-size: 11px;
       font-family: 'SF Mono', 'Consolas', monospace;
       scrollbar-width: thin;
-      scrollbar-color: var(--border) transparent;
+      scrollbar-color: var(--bd) transparent;
     }
-    .log-entry {
-      display: flex; gap: 6px; align-items: baseline;
-      padding: 2px 0;
-      border-bottom: 1px solid rgba(48,54,61,.5);
-      white-space: nowrap; overflow: hidden;
+    .log-row {
+      display: grid;
+      grid-template-columns: 44px 44px 1fr 68px;
+      align-items: center;
+      padding: 3px 14px;
+      border-bottom: 1px solid rgba(43,49,57,.6);
     }
-    .log-entry .lt  { color: var(--dim); flex-shrink: 0; width: 42px; }
-    .log-entry .la  { flex-shrink: 0; width: 36px; font-weight: 600; }
-    .log-entry .lr  { margin-left: auto; flex-shrink: 0; font-weight: 500; }
-    .log-entry .leq { color: var(--muted); flex-shrink: 0; }
-    .buy  { color: var(--green); }
-    .sell { color: var(--red); }
-    .hold { color: var(--dim); }
+    .log-row:hover { background: var(--s2); }
+    .log-ts   { color: var(--dim); }
+    .log-act  { font-weight: 700; }
+    .log-eq   { color: var(--muted); text-align: right; }
+    .log-rw   { text-align: right; font-weight: 500; }
+    .act-buy  { color: var(--green); }
+    .act-sell { color: var(--red); }
+    .act-hold { color: var(--dim); }
+    .act-adj  { color: var(--blue); }
+
+    /* ── POSITION BAR (bottom) ───────────────── */
+    .pos-bar {
+      display: flex; align-items: center; gap: 24px;
+      padding: 0 20px;
+      background: var(--s1);
+      border-top: 1px solid var(--bd);
+      overflow: hidden;
+    }
+    .pos-bar-item { display: flex; flex-direction: column; gap: 1px; }
+    .pos-bar-item .pb-lbl { font-size: 10px; color: var(--muted); }
+    .pos-bar-item .pb-val { font-size: 13px; font-weight: 600; }
+    .pos-sep { width: 1px; height: 28px; background: var(--bd); }
   </style>
 </head>
-
 <body>
 
-<!-- ─── HEADER ──────────────────────────────────────────── -->
+<!-- ── HEADER ───────────────────────────────────────── -->
 <header>
-  <div class="logo">
-    <div class="logo-icon">₿</div>
-    Bitcoin RL
+  <div class="hdr-logo">
+    <div class="logo-circle">₿</div>
+    RL
   </div>
-  <div class="divider"></div>
-  <div class="status-row">
-    <div class="dot waiting" id="dot"></div>
-    <span id="status-text">연결 중...</span>
+
+  <div class="hdr-symbol">BTC/KRW</div>
+
+  <div class="hdr-price-block">
+    <div class="hdr-price up" id="hdr-price">-</div>
   </div>
-  <span class="sim-badge">SIMULATION</span>
-  <div class="spacer"></div>
-  <div class="live-price">
-    <span class="price-label">KRW-BTC</span>
-    <span class="price-val" id="hdr-price">-</span>
-    <span class="price-chg" id="hdr-chg">-</span>
+
+  <div class="hdr-stats">
+    <div class="hdr-stat">
+      <span class="lbl">24h 변화</span>
+      <span class="val" id="hdr-chg">-</span>
+    </div>
+    <div class="hdr-stat">
+      <span class="lbl">24h 고가</span>
+      <span class="val" id="hdr-high">-</span>
+    </div>
+    <div class="hdr-stat">
+      <span class="lbl">24h 저가</span>
+      <span class="val" id="hdr-low">-</span>
+    </div>
+    <div class="hdr-stat">
+      <span class="lbl">시뮬 수익률</span>
+      <span class="val" id="hdr-roi">-</span>
+    </div>
+  </div>
+
+  <div class="hdr-right">
+    <div class="conn-dot wait" id="dot"></div>
+    <span class="conn-label" id="status-text">연결 중...</span>
+    <span class="sim-tag">SIMULATION</span>
   </div>
 </header>
 
-<!-- ─── MAIN ────────────────────────────────────────────── -->
+<!-- ── MAIN ─────────────────────────────────────────── -->
 <div class="main">
 
-  <!-- Charts column -->
-  <div class="charts-col">
+  <!-- Chart column -->
+  <div class="chart-col">
     <div class="tf-bar">
       <button class="tf-btn" data-tf="weekly">주봉</button>
       <button class="tf-btn" data-tf="daily">일봉</button>
-      <button class="tf-btn" data-tf="1h">1시간봉</button>
-      <button class="tf-btn active" data-tf="5m">5분봉</button>
+      <button class="tf-btn" data-tf="1h">1H</button>
+      <button class="tf-btn active" data-tf="5m">5M</button>
     </div>
     <div id="price-chart"></div>
-    <div id="position-chart"></div>
+    <div id="equity-chart"></div>
   </div>
 
   <!-- Side panel -->
-  <div class="side" id="side-panel">
+  <div class="side">
 
-    <!-- shown before model loads -->
+    <!-- No model state -->
     <div class="no-model" id="no-model-msg">
       <div class="icon">⏳</div>
       <h3>모델 대기 중</h3>
-      <p>학습 완료 후<br><code>checkpoints/final_model.zip</code><br>파일이 있어야 시작됩니다.</p>
+      <p>학습 완료 후<br><code>checkpoints/final_model.zip</code><br>파일이 필요합니다.</p>
     </div>
 
-    <!-- shown after model loads (hidden initially) -->
-    <div id="model-panel" style="display:none">
+    <!-- Model active state -->
+    <div id="model-panel" style="display:none; flex:1; display:none; flex-direction:column; overflow:hidden;">
 
-      <!-- Portfolio -->
-      <div class="card">
-        <div class="card-title">포트폴리오</div>
-        <div class="equity-big" id="equity-val">₩-</div>
-        <div class="equity-sub nu" id="equity-pnl">-</div>
-      </div>
+      <div class="side-scroll">
 
-      <!-- Position -->
-      <div class="card">
-        <div class="card-title">포지션</div>
-        <div class="pos-header">
-          <span class="pos-label">BTC 비중</span>
-          <span class="pos-val" id="ratio-val">0%</span>
+        <!-- Portfolio -->
+        <div class="card">
+          <div class="card-title">포트폴리오</div>
+          <div class="eq-big" id="equity-val">₩-</div>
+          <div class="eq-sub nu" id="equity-pnl">-</div>
         </div>
-        <div class="gauge-track">
-          <div class="gauge-fill" id="gauge" style="width:0%"></div>
-        </div>
-        <div class="kv"><span class="k">BTC 보유</span><span class="v" id="btc-val">-</span></div>
-        <div class="kv"><span class="k">현금</span><span class="v" id="cash-val">-</span></div>
-      </div>
 
-      <!-- Model stats -->
-      <div class="card">
-        <div class="card-title">모델 (추론 중)</div>
-        <div class="model-grid">
-          <div class="stat">
-            <div class="sl">시뮬 스텝</div>
-            <div class="sv" id="step-val">-</div>
+        <!-- Position -->
+        <div class="card">
+          <div class="card-title">포지션</div>
+          <div class="ratio-levels">
+            <div class="ratio-btn" data-r="0">0%</div>
+            <div class="ratio-btn" data-r="25">25%</div>
+            <div class="ratio-btn" data-r="50">50%</div>
+            <div class="ratio-btn" data-r="75">75%</div>
+            <div class="ratio-btn" data-r="100">100%</div>
           </div>
-          <div class="stat">
-            <div class="sl">매매 횟수</div>
-            <div class="sv" id="trade-count-val">0</div>
+          <div class="kv"><span class="k">BTC 보유</span><span class="v" id="btc-val">-</span></div>
+          <div class="kv"><span class="k">현금</span><span class="v" id="cash-val">-</span></div>
+          <div class="divline"></div>
+          <div class="kv"><span class="k">평균 진입가</span><span class="v" id="entry-price-val">-</span></div>
+          <div class="kv"><span class="k">미실현 손익</span><span class="v" id="unrealized-val">-</span></div>
+          <div class="kv"><span class="k">실현 손익</span><span class="v" id="realized-val">-</span></div>
+        </div>
+
+        <!-- Agent -->
+        <div class="card">
+          <div class="card-title">에이전트</div>
+          <div class="action-display">
+            <div>
+              <div class="action-label">목표 비중</div>
+              <div class="action-val" id="target-ratio-display">-</div>
+            </div>
+            <div style="text-align:right">
+              <div class="action-label">마지막 리워드</div>
+              <div class="action-val" id="reward-val" style="font-size:14px">-</div>
+            </div>
+          </div>
+          <div class="stats-grid">
+            <div class="stat-box">
+              <div class="sl">스텝</div>
+              <div class="sv" id="step-val">-</div>
+            </div>
+            <div class="stat-box">
+              <div class="sl">거래 횟수</div>
+              <div class="sv" id="trade-count-val">0</div>
+            </div>
+            <div class="stat-box">
+              <div class="sl">승리 거래</div>
+              <div class="sv up" id="win-val">0</div>
+            </div>
+            <div class="stat-box">
+              <div class="sl">패배 거래</div>
+              <div class="sv dn" id="loss-val">0</div>
+            </div>
           </div>
         </div>
-        <div class="reward-row">
-          <span class="k">마지막 리워드</span>
-          <span class="rv" id="reward-val">-</span>
-        </div>
-      </div>
 
-      <!-- Live log -->
-      <div class="log-card">
-        <div class="card-title">실시간 로그</div>
+        <!-- Log header (sticky) -->
+        <div class="card" style="padding-bottom:6px">
+          <div class="card-title" style="margin-bottom:0">실시간 로그</div>
+        </div>
+
+      </div><!-- /side-scroll -->
+
+      <!-- Log list (fills remaining space) -->
+      <div class="log-wrap">
         <div class="log-list" id="log-list"></div>
       </div>
 
     </div><!-- /model-panel -->
   </div><!-- /side -->
-
 </div><!-- /main -->
 
-<!-- ─── FOOTER ───────────────────────────────────────────── -->
-<footer>
-  <div id="equity-chart"></div>
-  <div class="footer-stats">
-    <div class="fstat">
-      <div class="fl">시뮬 타임스탬프</div>
-      <div class="fv" id="ft-ts">-</div>
-    </div>
-    <div class="fstat">
-      <div class="fl">시뮬 종가</div>
-      <div class="fv" id="ft-close">-</div>
-    </div>
-    <div class="fstat">
-      <div class="fl">초기 자본</div>
-      <div class="fv">₩1,000,000</div>
-    </div>
-    <div class="fstat">
-      <div class="fl">수익률</div>
-      <div class="fv" id="ft-roi">-</div>
-    </div>
+<!-- ── POSITION BAR ─────────────────────────────────── -->
+<div class="pos-bar">
+  <div class="pos-bar-item">
+    <span class="pb-lbl">심볼</span>
+    <span class="pb-val">KRW-BTC</span>
   </div>
-</footer>
+  <div class="pos-sep"></div>
+  <div class="pos-bar-item">
+    <span class="pb-lbl">목표 비중</span>
+    <span class="pb-val" id="pb-ratio">0%</span>
+  </div>
+  <div class="pos-sep"></div>
+  <div class="pos-bar-item">
+    <span class="pb-lbl">진입가</span>
+    <span class="pb-val" id="pb-entry">-</span>
+  </div>
+  <div class="pos-sep"></div>
+  <div class="pos-bar-item">
+    <span class="pb-lbl">현재가</span>
+    <span class="pb-val" id="pb-price">-</span>
+  </div>
+  <div class="pos-sep"></div>
+  <div class="pos-bar-item">
+    <span class="pb-lbl">미실현 손익</span>
+    <span class="pb-val" id="pb-upnl">-</span>
+  </div>
+  <div class="pos-sep"></div>
+  <div class="pos-bar-item">
+    <span class="pb-lbl">총 수익률</span>
+    <span class="pb-val" id="pb-roi">-</span>
+  </div>
+  <div class="pos-sep"></div>
+  <div class="pos-bar-item">
+    <span class="pb-lbl">시뮬 타임스탬프</span>
+    <span class="pb-val" id="pb-ts">-</span>
+  </div>
+</div>
 
 <script>
-// ───────────────────────────────────────────
-// Constants & state
-// ───────────────────────────────────────────
+// ── Constants ──────────────────────────────────────────
 const INITIAL_EQUITY = 1_000_000;
+const TARGET_LEVELS  = [0, 25, 50, 75, 100];
 
-let state = {
-  step: 0,
-  equity: INITIAL_EQUITY, cash: INITIAL_EQUITY, btc_holding: 0,
-  target_ratio: 0, reward: 0,
-  open: 0, high: 0, low: 0, close: 0, ts: '',
-};
-let tradeCount = 0;
+let tradeCount = 0, winCount = 0, lossCount = 0;
+let lastRealizedPnl = 0;
+let tradeMarkers = [];
 
-// ───────────────────────────────────────────
-// Chart setup
-// ───────────────────────────────────────────
-const BASE_OPTS = {
+// ── Chart setup ────────────────────────────────────────
+const BASE = {
   autoSize: true,
-  layout: { background: { color: '#0d1117' }, textColor: '#6e7681' },
-  grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
-  timeScale: { borderColor: '#30363d', timeVisible: true, secondsVisible: false },
-  rightPriceScale: { borderColor: '#30363d' },
+  layout: { background: { color: '#0b0e11' }, textColor: '#5e6673' },
+  grid: { vertLines: { color: '#1c2127' }, horzLines: { color: '#1c2127' } },
+  timeScale: { borderColor: '#2b3139', timeVisible: true, secondsVisible: false },
+  rightPriceScale: { borderColor: '#2b3139' },
   crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-  handleScroll: true,
-  handleScale: true,
+  handleScroll: true, handleScale: true,
 };
 
-const priceChart = LightweightCharts.createChart(
-  document.getElementById('price-chart'), BASE_OPTS
-);
+const priceChart = LightweightCharts.createChart(document.getElementById('price-chart'), BASE);
 const candleSeries = priceChart.addCandlestickSeries({
-  upColor: '#3fb950', downColor: '#f85149',
-  borderUpColor: '#3fb950', borderDownColor: '#f85149',
-  wickUpColor: '#3fb950', wickDownColor: '#f85149',
+  upColor: '#0ecb81', downColor: '#f6465d',
+  borderUpColor: '#0ecb81', borderDownColor: '#f6465d',
+  wickUpColor: '#0ecb81', wickDownColor: '#f6465d',
 });
-const volumeSeries = priceChart.addHistogramSeries({
-  color: '#30363d',
+const volSeries = priceChart.addHistogramSeries({
   priceFormat: { type: 'volume' },
   priceScaleId: 'vol',
 });
-priceChart.priceScale('vol').applyOptions({
-  scaleMargins: { top: 0.82, bottom: 0 },
-});
+priceChart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } });
 
-const posChart = LightweightCharts.createChart(
-  document.getElementById('position-chart'),
-  { ...BASE_OPTS, layout: { ...BASE_OPTS.layout, textColor: '#8b949e' } }
-);
-const posSeries = posChart.addAreaSeries({
-  lineColor: '#f7931a',
-  topColor: 'rgba(247,147,26,.25)',
-  bottomColor: 'rgba(247,147,26,0)',
-  lineWidth: 2,
-  priceFormat: { type: 'custom', formatter: v => (v * 100).toFixed(0) + '%' },
+const eqChart = LightweightCharts.createChart(document.getElementById('equity-chart'), {
+  ...BASE,
+  layout: { ...BASE.layout, textColor: '#5e6673' },
+  timeScale: { ...BASE.timeScale, visible: false },
 });
-posChart.priceScale('right').applyOptions({
-  scaleMargins: { top: 0.05, bottom: 0.05 },
+const eqLine = eqChart.addLineSeries({
+  color: '#1890ff', lineWidth: 2,
+  priceFormat: { type: 'custom', formatter: v => '₩' + Math.round(v/1000) + 'K' },
 });
-
-const eqChart = LightweightCharts.createChart(
-  document.getElementById('equity-chart'),
-  { ...BASE_OPTS, layout: { ...BASE_OPTS.layout, textColor: '#6e7681' } }
-);
-const eqSeries = eqChart.addLineSeries({
-  color: '#58a6ff',
-  lineWidth: 2,
-  priceFormat: { type: 'custom', formatter: v => '₩' + Math.round(v / 1000) + 'K' },
-});
-// Reference line at initial equity
-const refSeries = eqChart.addLineSeries({
-  color: '#30363d', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed,
-  priceFormat: { type: 'custom', formatter: () => '' },
+const eqRef = eqChart.addLineSeries({
+  color: '#2b3139', lineWidth: 1,
+  lineStyle: LightweightCharts.LineStyle.Dashed,
   lastValueVisible: false, priceLineVisible: false,
+  priceFormat: { type: 'custom', formatter: () => '' },
 });
 
-// Sync timescales between price and position charts
-priceChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-  if (range !== null) posChart.timeScale().setVisibleLogicalRange(range);
-});
-posChart.timeScale().subscribeVisibleLogicalRangeChange(range => {
-  if (range !== null) priceChart.timeScale().setVisibleLogicalRange(range);
-});
+// entry price line
+let entryLine = null;
 
-// ───────────────────────────────────────────
-// Helpers
-// ───────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────
 const fmt  = n => '₩' + Math.round(n).toLocaleString('ko-KR');
-const pct  = (n, d=2) => (n >= 0 ? '+' : '') + (n * 100).toFixed(d) + '%';
+const pct  = (n, d=2) => (n >= 0 ? '+' : '') + (n*100).toFixed(d) + '%';
 const cls  = n => n > 0 ? 'up' : n < 0 ? 'dn' : 'nu';
-const set  = (id, txt) => { const el = document.getElementById(id); if(el) el.textContent = txt; };
-const setC = (id, c)   => { const el = document.getElementById(id); if(el) el.className = c; };
+const $    = id => document.getElementById(id);
+const set  = (id, v) => { const e=$(id); if(e) e.textContent=v; };
+const setC = (id, c) => { const e=$(id); if(e) e.className=c; };
 
-// ───────────────────────────────────────────
-// UI update (throttled)
-// ───────────────────────────────────────────
-let _rafPending = false;
-let _pendingState = null;
+const KST = 9*3600;
+function toKST(s) {
+  return Math.floor(new Date(s.replace(' ','T')+'Z').getTime()/1000) + KST;
+}
 
-function scheduleRender(data) {
-  _pendingState = data;
-  if (!_rafPending) {
-    _rafPending = true;
-    requestAnimationFrame(render);
+// ── Ratio levels UI ────────────────────────────────────
+function setRatioLevel(pct) {
+  const nearest = TARGET_LEVELS.reduce((a,b) => Math.abs(b-pct) < Math.abs(a-pct) ? b : a);
+  document.querySelectorAll('.ratio-btn').forEach(btn => {
+    btn.classList.toggle('active', parseInt(btn.dataset.r) === nearest);
+  });
+}
+
+// ── Entry price line on chart ──────────────────────────
+function updateEntryLine(price) {
+  if (price > 0) {
+    if (!entryLine) {
+      entryLine = candleSeries.createPriceLine({
+        price,
+        color: '#f0b90b',
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: '진입가',
+      });
+    } else {
+      entryLine.applyOptions({ price });
+    }
+  } else if (entryLine) {
+    candleSeries.removePriceLine(entryLine);
+    entryLine = null;
   }
 }
 
-function render() {
-  _rafPending = false;
-  if (!_pendingState) return;
-  const d = _pendingState;
+// ── Render ─────────────────────────────────────────────
+let _raf = false, _pending = null;
 
-  // Show model panel on first step
-  document.getElementById('no-model-msg').style.display = 'none';
-  document.getElementById('model-panel').style.display  = 'block';
+function scheduleRender(d) {
+  _pending = d;
+  if (!_raf) { _raf = true; requestAnimationFrame(render); }
+}
+
+function render() {
+  _raf = false;
+  const d = _pending; if (!d) return;
+
+  $('no-model-msg').style.display = 'none';
+  const mp = $('model-panel');
+  mp.style.display = 'flex';
+  mp.style.flexDirection = 'column';
 
   const roi = (d.equity - INITIAL_EQUITY) / INITIAL_EQUITY;
   const pnl = d.equity - INITIAL_EQUITY;
+  const ratioPct = Math.round((d.target_ratio ?? 0) * 100);
 
   // Portfolio
   set('equity-val', fmt(d.equity));
   set('equity-pnl', fmt(pnl) + ' (' + pct(roi) + ')');
-  setC('equity-pnl', 'equity-sub ' + cls(pnl));
+  setC('equity-pnl', 'eq-sub ' + cls(pnl));
 
   // Position
-  const rp = ((d.target_ratio ?? 0) * 100).toFixed(1) + '%';
-  set('ratio-val', rp);
-  document.getElementById('gauge').style.width = rp;
+  setRatioLevel(ratioPct);
   set('btc-val', (d.btc_holding ?? 0).toFixed(6) + ' BTC');
-  set('cash-val', fmt(d.cash));
+  set('cash-val', fmt(d.cash ?? 0));
 
-  // Model stats
-  set('step-val', d.step.toLocaleString());
-  if (d.trade_executed) tradeCount++;
-  set('trade-count-val', tradeCount.toLocaleString());
-  const rwEl = document.getElementById('reward-val');
-  if (rwEl) {
-    rwEl.textContent = (d.reward >= 0 ? '+' : '') + d.reward.toFixed(5);
-    rwEl.className = 'rv ' + cls(d.reward);
+  const ep = d.avg_entry_price ?? 0;
+  const cp = d.close ?? 0;
+  set('entry-price-val', ep > 0 ? fmt(ep) : '-');
+  updateEntryLine(ep > 0 && d.btc_holding > 0 ? ep : 0);
+
+  const upnl = ep > 0 && d.btc_holding > 0
+    ? d.btc_holding * (cp - ep)
+    : 0;
+  set('unrealized-val', ep > 0 ? (upnl >= 0 ? '+' : '') + fmt(upnl) : '-');
+  setC('unrealized-val', 'v ' + cls(upnl));
+  set('realized-val', (d.realized_pnl ?? 0) >= 0
+    ? '+' + fmt(d.realized_pnl ?? 0)
+    : fmt(d.realized_pnl ?? 0));
+  setC('realized-val', 'v ' + cls(d.realized_pnl ?? 0));
+
+  // Agent
+  set('target-ratio-display', ratioPct + '%');
+  setC('target-ratio-display', 'action-val ' + (ratioPct > 0 ? 'up' : 'nu'));
+  const rw = d.reward ?? 0;
+  set('reward-val', (rw >= 0 ? '+' : '') + rw.toFixed(5));
+  setC('reward-val', 'action-val ' + cls(rw));
+
+  set('step-val', (d.step ?? 0).toLocaleString());
+
+  if (d.trade_executed) {
+    tradeCount++;
+    // track realized pnl change for win/loss
+    const rpnl = d.realized_pnl ?? 0;
+    if (rpnl > lastRealizedPnl) winCount++;
+    else if (rpnl < lastRealizedPnl) lossCount++;
+    lastRealizedPnl = rpnl;
   }
+  set('trade-count-val', tradeCount.toLocaleString());
+  set('win-val', winCount);
+  set('loss-val', lossCount);
 
   // Log
-  if (d.trade_executed || d.step % 500 === 0) addLog(d);
+  if (d.trade_executed || d.step % 200 === 0) addLog(d);
 
-  // Footer
-  set('ft-ts', d.ts ? d.ts.substring(0, 16) : '-');
-  set('ft-close', d.close ? fmt(d.close) : '-');
-  set('ft-roi', pct(roi));
-  setC('ft-roi', 'fv ' + cls(roi));
+  // Position bar
+  set('pb-ratio', ratioPct + '%');
+  set('pb-entry', ep > 0 ? fmt(ep) : '-');
+  set('pb-price', cp > 0 ? fmt(cp) : '-');
+  if (upnl !== 0) {
+    set('pb-upnl', (upnl >= 0 ? '+' : '') + fmt(upnl));
+    setC('pb-upnl', 'pb-val ' + cls(upnl));
+  } else {
+    set('pb-upnl', '-');
+  }
+  set('pb-roi', pct(roi));
+  setC('pb-roi', 'pb-val ' + cls(roi));
+  set('pb-ts', d.ts ? d.ts.substring(0, 16) : '-');
 
-  // ── Charts ──────────────────────────────
+  // Header ROI
+  set('hdr-roi', pct(roi));
+  setC('hdr-roi', 'val ' + cls(roi));
+
+  // Charts
   if (d.ts && d.close) {
-    // ts는 KST 기준 문자열 — UTC로 파싱 후 KST 오프셋 적용
-    const t = toKST(d.ts.replace(' ', 'T'));
+    const t = toKST(d.ts);
     if (t > 0) {
-      // Candlestick
       candleSeries.update({ time: t, open: d.open, high: d.high, low: d.low, close: d.close });
-
-      // Volume (approximate with btcHolding change as proxy)
-      volumeSeries.update({
+      volSeries.update({
         time: t,
-        value: d.btcHolding,
-        color: d.close >= d.open ? 'rgba(63,185,80,.4)' : 'rgba(248,81,73,.4)',
+        value: Math.abs(d.btc_holding ?? 0),
+        color: d.close >= d.open ? 'rgba(14,203,129,.3)' : 'rgba(246,70,93,.3)',
       });
+      eqLine.update({ time: t, value: d.equity });
+      eqRef.update({ time: t, value: INITIAL_EQUITY });
 
-      // Position ratio
-      posSeries.update({ time: t, value: d.targetRatio });
-
-      // Equity curve
-      eqSeries.update({ time: t, value: d.equity });
-      refSeries.update({ time: t, value: INITIAL_EQUITY });
+      // Trade markers
+      if (d.trade_executed) {
+        const prevRatio = (addLog._prevRatio ?? 0);
+        const isUp = ratioPct > prevRatio;
+        tradeMarkers.push({
+          time: t,
+          position: isUp ? 'belowBar' : 'aboveBar',
+          color: isUp ? '#0ecb81' : '#f6465d',
+          shape: isUp ? 'arrowUp' : 'arrowDown',
+          text: ratioPct + '%',
+        });
+        // keep last 200 markers
+        if (tradeMarkers.length > 200) tradeMarkers.shift();
+        candleSeries.setMarkers(tradeMarkers);
+      }
     }
   }
 }
 
-// ───────────────────────────────────────────
-// Live log
-// ───────────────────────────────────────────
-const MAX_LOG = 120;
+// ── Log ────────────────────────────────────────────────
+const MAX_LOG = 150;
 
 function addLog(d) {
-  const list = document.getElementById('log-list');
-  if (!list) return;
+  const list = $('log-list'); if (!list) return;
 
-  const ratio = (d.target_ratio ?? 0);
-  const prevRatio = addLog._prev ?? 0;
-  addLog._prev = ratio;
+  const ratio    = Math.round((d.target_ratio ?? 0) * 100);
+  const prevRatio = addLog._prevRatio ?? 0;
+  addLog._prevRatio = ratio;
 
-  let action, cls;
+  let act, ac;
   if (d.trade_executed) {
-    if (ratio > prevRatio + 0.02) { action = 'BUY';  cls = 'buy'; }
-    else if (ratio < prevRatio - 0.02) { action = 'SELL'; cls = 'sell'; }
-    else { action = 'ADJ'; cls = 'hold'; }
+    if (ratio > prevRatio + 1)      { act = '▲ BUY';  ac = 'act-buy'; }
+    else if (ratio < prevRatio - 1) { act = '▼ SELL'; ac = 'act-sell'; }
+    else                             { act = '↔ ADJ';  ac = 'act-adj'; }
   } else {
-    action = 'HOLD'; cls = 'hold';
+    act = '— HOLD'; ac = 'act-hold';
   }
 
-  const ts = d.ts ? d.ts.substring(11, 16) : '--:--';
-  const rw = (d.reward >= 0 ? '+' : '') + d.reward.toFixed(4);
-  const eq = '₩' + Math.round((d.equity ?? 0) / 1000) + 'K';
+  const ts = d.ts ? d.ts.substring(11,16) : '--:--';
+  const rw = d.reward ?? 0;
+  const eq = '₩' + Math.round((d.equity??0)/1000) + 'K';
 
-  const el = document.createElement('div');
-  el.className = 'log-entry';
-  el.innerHTML = `<span class="lt">${ts}</span><span class="la ${cls}">${action}</span><span class="lr ${d.reward >= 0 ? 'up' : 'dn'}">${rw}</span><span class="leq">${eq}</span>`;
-  list.prepend(el);
+  const row = document.createElement('div');
+  row.className = 'log-row';
+  row.innerHTML =
+    `<span class="log-ts">${ts}</span>` +
+    `<span class="log-act ${ac}">${act.split(' ')[0]}</span>` +
+    `<span class="log-act ${ac}" style="font-size:11px;padding-left:4px">${act.split(' ')[1]??''}</span>` +
+    `<span class="log-rw ${rw>=0?'up':'dn'}">${(rw>=0?'+':'')+rw.toFixed(4)}</span>` +
+    `<span class="log-eq">${eq}</span>`;
 
+  // fix: rebuild as proper 4 columns
+  row.innerHTML = '';
+  const cols = [ts, act, (rw>=0?'+':'')+rw.toFixed(4), eq];
+  const css  = ['log-ts','log-act '+ac, 'log-rw '+(rw>=0?'up':'dn'), 'log-eq'];
+  cols.forEach((c,i) => {
+    const s = document.createElement('span');
+    s.className = css[i]; s.textContent = c;
+    row.appendChild(s);
+  });
+
+  list.prepend(row);
   while (list.children.length > MAX_LOG) list.removeChild(list.lastChild);
 }
 
-// ───────────────────────────────────────────
-// WebSocket
-// ───────────────────────────────────────────
-const dotEl   = document.getElementById('dot');
-const statusEl = document.getElementById('status-text');
+// ── WebSocket ──────────────────────────────────────────
+const dotEl  = $('dot');
+const statEl = $('status-text');
 
 function connect() {
   const ws = new WebSocket(`ws://${location.host}/ws`);
-
   ws.onopen = () => {
-    dotEl.className = 'dot active';
-    statusEl.textContent = '온라인 학습 중';
-
-    // Status check
-    fetch('/api/status').then(r => r.json()).then(s => {
+    dotEl.className = 'conn-dot live';
+    statEl.textContent = '추론 중';
+    fetch('/api/status').then(r=>r.json()).then(s => {
       if (!s.model_loaded) {
-        dotEl.className = 'dot waiting';
-        statusEl.textContent = '모델 대기 중';
+        dotEl.className = 'conn-dot wait';
+        statEl.textContent = '모델 대기 중';
       }
-    });
+    }).catch(()=>{});
   };
-
   ws.onmessage = e => {
     const d = JSON.parse(e.data);
     if (d.type === 'step') scheduleRender(d);
-    if (d.type === 'update') { tradeCount = 0; }
+    if (d.type === 'update') { tradeCount = 0; winCount = 0; lossCount = 0; lastRealizedPnl = 0; }
   };
-
   ws.onclose = () => {
-    dotEl.className = 'dot offline';
-    statusEl.textContent = '재연결 중...';
+    dotEl.className = 'conn-dot dead';
+    statEl.textContent = '재연결 중...';
     setTimeout(connect, 2000);
   };
-
   ws.onerror = () => ws.close();
 }
-
 connect();
 
-// ───────────────────────────────────────────
-// Real-time header price (Upbit polling)
-// ───────────────────────────────────────────
-async function fetchHeaderPrice() {
+// ── Real-time header price ─────────────────────────────
+async function fetchPrice() {
   try {
     const r = await fetch('/api/candles?count=1');
     const [c] = await r.json();
     if (!c) return;
-
     const price  = c.trade_price;
     const change = (c.trade_price - c.opening_price) / c.opening_price;
+    const high   = c.high_price;
+    const low    = c.low_price;
 
-    const priceEl = document.getElementById('hdr-price');
-    const chgEl   = document.getElementById('hdr-chg');
+    const pe = $('hdr-price');
+    pe.textContent = fmt(price);
+    pe.className   = 'hdr-price ' + (change >= 0 ? 'up' : 'dn');
 
-    priceEl.textContent = fmt(price);
-    priceEl.style.color = change >= 0 ? 'var(--green)' : 'var(--red)';
+    const ce = $('hdr-chg');
+    ce.textContent = pct(change);
+    ce.className   = 'val ' + cls(change);
 
-    chgEl.textContent = pct(change, 2);
-    chgEl.className   = 'price-chg' + (change < 0 ? ' dn' : '');
+    set('hdr-high', fmt(high));
+    set('hdr-low',  fmt(low));
+    set('pb-price', fmt(price));
   } catch {}
 }
+fetchPrice();
+setInterval(fetchPrice, 10_000);
 
-fetchHeaderPrice();
-setInterval(fetchHeaderPrice, 10_000);
-
-// ───────────────────────────────────────────
-// KST helper
-// ───────────────────────────────────────────
-const KST_OFFSET = 9 * 3600;
-
-function toKST(utcStr) {
-  return Math.floor(new Date(utcStr + 'Z').getTime() / 1000) + KST_OFFSET;
-}
-
-// ───────────────────────────────────────────
-// Timeframe switcher
-// ───────────────────────────────────────────
-let currentTF = '5m';
-
+// ── Timeframe switcher ─────────────────────────────────
 async function loadTF(tf) {
   try {
     const r = await fetch('/api/history?tf=' + tf);
     const { candles } = await r.json();
-    if (!candles || !candles.length) {
-      console.warn('[TF] No data for', tf, '- parquet not downloaded yet?');
-      return;
-    }
-    const series = candles.map(c => ({ time: c.t, open: c.o, high: c.h, low: c.l, close: c.c }));
-    candleSeries.setData(series);
-    volumeSeries.setData(series.map(c => ({
-      time: c.time,
-      value: 0,
-      color: c.close >= c.open ? 'rgba(63,185,80,.3)' : 'rgba(248,81,73,.3)',
+    if (!candles?.length) return;
+    const cs = candles.map(c => ({ time: c.t, open: c.o, high: c.h, low: c.l, close: c.c }));
+    candleSeries.setData(cs);
+    volSeries.setData(cs.map(c => ({
+      time: c.time, value: 0,
+      color: c.close >= c.open ? 'rgba(14,203,129,.3)' : 'rgba(246,70,93,.3)',
     })));
     priceChart.timeScale().fitContent();
-  } catch (e) {
-    console.warn('[TF] Load failed:', e);
-  }
+  } catch {}
 }
 
 document.querySelectorAll('.tf-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    currentTF = btn.dataset.tf;
-    loadTF(currentTF);
+    loadTF(btn.dataset.tf);
   });
 });
 
-// ───────────────────────────────────────────
-// Initial chart load
-// ───────────────────────────────────────────
-loadTF(currentTF);
-
-// 5분마다 현재 TF 최신화 (경량)
-setInterval(() => loadTF(currentTF), 5 * 60_000);
+loadTF('5m');
+setInterval(() => loadTF(document.querySelector('.tf-btn.active')?.dataset.tf ?? '5m'), 5*60_000);
 </script>
-
 </body>
 </html>
