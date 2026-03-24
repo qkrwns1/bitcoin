@@ -20,27 +20,27 @@ DEFAULT_SEQUENCE_FEATURES = [
     "close",
     "volume",
     "trade_value",
-    "return_1m",
-    "log_return_1m",
     "return_5m",
+    "log_return_5m",
     "return_15m",
+    "return_1h",
     "body_ratio",
     "upper_wick_ratio",
     "lower_wick_ratio",
     "range_ratio",
-    "volume_zscore_30m",
-    "volume_zscore_60m",
-    "volume_zscore_120m",
+    "volume_zscore_1h",
+    "volume_zscore_2h",
+    "volume_zscore_4h",
     "volatility_15m",
-    "volatility_60m",
+    "volatility_1h",
     "dist_to_15m_high",
     "dist_to_15m_low",
-    "dist_to_30m_high",
-    "dist_to_30m_low",
-    "dist_to_60m_high",
-    "dist_to_60m_low",
-    "dist_to_240m_high",
-    "dist_to_240m_low",
+    "dist_to_1h_high",
+    "dist_to_1h_low",
+    "dist_to_4h_high",
+    "dist_to_4h_low",
+    "dist_to_1d_high",
+    "dist_to_1d_low",
 ]
 
 DEFAULT_CONTEXT_FEATURES = [
@@ -76,8 +76,8 @@ DEFAULT_PORTFOLIO_FEATURES = [
 class DataConfig:
     data_root: Path = Path(__file__).resolve().parent.parent / "data analysis" / "data"
     market: str = "KRW-BTC"
-    step_minutes: int = 1
-    sequence_length: int = 360
+    step_minutes: int = 5
+    sequence_length: int = 60   # 60봉 × 5분 = 5시간 컨텍스트
     train_ratio: float = 0.7
     val_ratio: float = 0.15
     context_feature_names: list[str] = field(default_factory=lambda: DEFAULT_CONTEXT_FEATURES.copy())
@@ -88,7 +88,7 @@ class DataConfig:
 class BitcoinDataHandler:
     def __init__(self, config: DataConfig) -> None:
         self.config = config
-        self.frame_path = self.config.data_root / "processed" / "rl" / "rl_market_frame_1m.parquet"
+        self.frame_path = self.config.data_root / "processed" / "rl" / "rl_market_frame_5m.parquet"
         self.market_frame: pd.DataFrame | None = None
 
     def load_processed_frames(self) -> pd.DataFrame:
