@@ -54,7 +54,13 @@ def cmd_train(args) -> None:
     train_env = _make_vec_env(splits["train"], layout, seq_len)
     train_env = VecNormalize(train_env, norm_obs=True, norm_reward=True, clip_obs=10.0)
 
-    val_env = build_eval_env(splits["val"], layout, seq_len, VECNORM_PATH) if VECNORM_PATH.exists() else None
+    val_env = None
+    if VECNORM_PATH.exists():
+        try:
+            val_env = build_eval_env(splits["val"], layout, seq_len, VECNORM_PATH)
+        except AssertionError:
+            print("[train] 기존 vec_normalize obs shape 불일치 → val_env 없이 학습 시작")
+            VECNORM_PATH.unlink()   # 구 파일 삭제
 
     agent_config = AgentConfig(
         total_timesteps=args.timesteps,
