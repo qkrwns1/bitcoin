@@ -25,9 +25,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from bitcoin_rl_system.data_handler import BitcoinDataHandler, DataConfig
 from bitcoin_rl_system.trading_environment import _PRICE_COLS, _LOG_COLS
 
-CHECKPOINT  = Path("checkpoints/final_model.zip")
-VECNORM     = Path("checkpoints/vec_normalize.pkl")
-OUT_DIR     = Path("bitcoin_rl_system/faiss")
+_HERE       = Path(__file__).parent
+CHECKPOINT  = _HERE / "checkpoints" / "final_model"   # SB3가 .zip 자동 추가
+VECNORM     = _HERE / "checkpoints" / "vec_normalize.pkl"
+OUT_DIR     = _HERE / "faiss"
 BATCH_SIZE  = 512
 
 # 미래 수익률 윈도우 (bar 단위, 5m봉)
