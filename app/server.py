@@ -48,13 +48,13 @@ async def _startup() -> None:
 
     asyncio.create_task(_update_data())
 
-    from app.runner import AgentRunner
+    from app.live_runner import LiveAgentRunner
 
     if MODEL_PATH.with_suffix(".zip").exists() and VECNORM_PATH.exists():
-        _runner = AgentRunner(MODEL_PATH, VECNORM_PATH)
+        _runner = LiveAgentRunner(MODEL_PATH, VECNORM_PATH)
         loop = asyncio.get_running_loop()
         asyncio.create_task(_runner.start(_broadcast, loop))
-        print(f"[dashboard] Model loaded: {MODEL_PATH}.zip")
+        print(f"[dashboard] Live runner started: {MODEL_PATH}.zip")
     else:
         print(f"[dashboard] Model not found at {MODEL_PATH}.zip")
         print(f"[dashboard] Run training first, then restart the server.")

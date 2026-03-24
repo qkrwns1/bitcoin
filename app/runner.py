@@ -81,11 +81,19 @@ class AgentRunner:
         }
 
         vec_env = make_vec_env(BitcoinTradingEnvironment, n_envs=1, env_kwargs=env_kwargs)
-        vec_env = VecNormalize.load(str(self.vecnorm_path), vec_env)
-        vec_env.training = False
-        vec_env.norm_reward = False
 
-        model = PPO.load(str(self.model_path), env=vec_env)
+        try:
+            vec_env = VecNormalize.load(str(self.vecnorm_path), vec_env)
+            vec_env.training = False
+            vec_env.norm_reward = False
+            model = PPO.load(str(self.model_path), env=vec_env)
+        except (AssertionError, Exception) as e:
+            print(f"[runner] Model load failed: {e}")
+            print("[runner] Starting demo mode (price replay only)")
+            vec_env.close()
+            self._demo_loop(broadcast, loop, splits["test"])
+            return
+
         streamer = _InferenceStreamer(broadcast, loop)
         obs = vec_env.reset()
         step = 0
@@ -119,7 +127,6 @@ class AgentRunner:
                 "trade_executed": bool(info.get("trade_executed", False)),
             })
 
-            # 초당 10스텝으로 제한 (0.1초/스텝)
             elapsed = time.monotonic() - t0
             if elapsed < 0.1:
                 time.sleep(0.1 - elapsed)
@@ -128,3 +135,42 @@ class AgentRunner:
                 streamer.emit({"type": "update", "n_updates": 0})
                 obs = vec_env.reset()
                 step = 0
+
+    def _demo_loop(
+        self,
+        broadcast: BroadcastFn,
+        loop: asyncio.AbstractEventLoop,
+        test_df,
+    ) -> None:
+        import pandas as pd
+        streamer = _InferenceStreamer(broadcast, loop)
+        step = 0
+        df = test_df.reset_index(drop=True)
+        while True:
+            for idx in range(len(df)):
+                row = df.iloc[idx]
+                ts = str(row.get("ts", ""))
+                streamer.emit({
+                    "type": "step",
+                    "step": step,
+                    "n_updates": 0,
+                    "reward": 0.0,
+                    "action": 2,
+                    "target_ratio": 0.0,
+                    "position_ratio": 0.0,
+                    "equity": 1_000_000.0,
+                    "cash": 1_000_000.0,
+                    "btc_holding": 0.0,
+                    "avg_entry_price": 0.0,
+                    "realized_pnl": 0.0,
+                    "open":  float(row.get("open",  0)),
+                    "high":  float(row.get("high",  0)),
+                    "low":   float(row.get("low",   0)),
+                    "close": float(row.get("close", 0)),
+                    "ts": ts,
+                    "trade_executed": False,
+                })
+                step += 1
+                time.sleep(0.05)
+            streamer.emit({"type": "update", "n_updates": 0})
+            step = 0
