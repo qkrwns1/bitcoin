@@ -147,10 +147,12 @@ def main() -> None:
 
     # ── Phase 2 PPO 모델 신규 빌드 ────────────────────────────────
     print("Phase 2 PPO 모델 빌드...")
-    # raw 환경에서 dim 파악
+    # raw 환경에서 dim 파악 (Monitor 한 겹만 벗김 → BeliefAugmentedEnv 유지)
+    from bitcoin_rl_system.belief_environment import BeliefAugmentedEnv
     raw_env = train_vec.envs[0]
-    while hasattr(raw_env, "env"):
-        raw_env = raw_env.env
+    if hasattr(raw_env, "env"):
+        raw_env = raw_env.env   # Monitor → BeliefAugmentedEnv (portfolio_dim=10)
+    # gym.Wrapper 더 벗기지 않음 — BeliefAugmentedEnv.portfolio_dim = 10
 
     policy_kwargs = {
         "features_extractor_class": SequenceContextFeatureExtractor,
