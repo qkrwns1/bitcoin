@@ -19,6 +19,9 @@ data analysis/data/db/
 checkpoints/
 runs/
 
+# FAISS 대용량 바이너리 (서버에서 직접 생성)
+bitcoin_rl_system/faiss/
+
 # 기타
 .DS_Store
 *.log
