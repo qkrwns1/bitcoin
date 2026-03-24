@@ -1,8 +1,8 @@
-"""Custom Gymnasium environment — discrete action trading (HOLD/BUY/SELL)."""
+"""Custom Gymnasium environment — 5-level discrete target ratio trading."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import gymnasium as gym
 from gymnasium import spaces
@@ -12,6 +12,9 @@ import pandas as pd
 _PRICE_COLS: frozenset[str] = frozenset({"open", "high", "low", "close"})
 _LOG_COLS: frozenset[str] = frozenset({"volume", "trade_value"})
 
+# 목표 비중 레벨: 0% / 25% / 50% / 75% / 100%
+TARGET_LEVELS: tuple[float, ...] = (0.0, 0.25, 0.5, 0.75, 1.0)
+
 
 @dataclass(slots=True)
 class EnvironmentConfig:
@@ -19,31 +22,24 @@ class EnvironmentConfig:
     fee_rate: float = 0.0005
     step_minutes: int = 1
     sequence_length: int = 60
-    # 매수 시 총 자본 대비 BTC 투자 비율
-    btc_target_ratio: float = 0.9
-    # 최소 보유 스텝 (1분봉 × 5 = 5분) — 손절 허용, 즉각 매매만 방지
-    min_hold_steps: int = 5
-    # 보유 중 미실현 손익 신호 가중치 (value fn 학습 보조)
-    hold_signal_scale: float = 0.01
-    # 포지션 없을 때 기회비용 가중치 (진입 유도)
-    opportunity_scale: float = 0.001
+    # 너무 소액 리밸런싱 방지 (수수료 낭비 차단)
+    min_rebalance_value: float = 5_000.0
 
 
 class BitcoinTradingEnvironment(gym.Env):
     """
-    Action space: Discrete(3)
-        0 = HOLD
-        1 = BUY  (btc_target_ratio 만큼 전량 매수)
-        2 = SELL (전량 매도)
+    Action space: Discrete(5)
+        0 = BTC 목표 비중  0%  (전량 현금)
+        1 = BTC 목표 비중 25%
+        2 = BTC 목표 비중 50%
+        3 = BTC 목표 비중 75%
+        4 = BTC 목표 비중 100% (전량 BTC)
 
-    Reward:
-        SELL → realized_pnl / prev_equity          (주 신호)
-        BUY  → -total_fee / prev_equity             (진입 비용)
-        HOLD, 포지션 있음 → unrealized_pnl_pct * hold_signal_scale
-        HOLD, 포지션 없음 → -max(price_return, 0) * opportunity_scale
+    모든 액션이 항상 유효 — 현재 포지션에서 목표 비중으로 리밸런싱.
+    동일 비중 유지 = HOLD, 수수료가 자연스럽게 잦은 매매를 억제.
 
-    Constraint:
-        min_hold_steps 미만이면 SELL 액션을 HOLD 로 강제 변환.
+    Reward: (next_equity - prev_equity) / prev_equity
+        포지션 크기에 비례한 순수 자산 변화율.
     """
 
     metadata = {"render_modes": ["human"]}
@@ -75,12 +71,11 @@ class BitcoinTradingEnvironment(gym.Env):
             + self.portfolio_dim
         )
 
-        # 정규화 마스크 사전계산
         self._price_mask = np.array([col in _PRICE_COLS for col in sequence_features])
         self._log_mask = np.array([col in _LOG_COLS for col in sequence_features])
 
-        # Discrete(3): 0=HOLD, 1=BUY, 2=SELL
-        self.action_space = spaces.Discrete(3)
+        # Discrete(5): 0~4 → 0%/25%/50%/75%/100%
+        self.action_space = spaces.Discrete(len(TARGET_LEVELS))
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
@@ -88,14 +83,13 @@ class BitcoinTradingEnvironment(gym.Env):
             dtype=np.float32,
         )
 
-        # 상태 초기화
         self.current_step: int = self.sequence_length
         self.cash: float = self.config.initial_cash
         self.btc_holding: float = 0.0
         self.avg_entry_price: float = 0.0
         self.realized_pnl: float = 0.0
-        self.in_position: bool = False
-        self.steps_in_position: int = 0
+        self.steps_since_rebalance: int = 0
+        self.last_target_ratio: float = 0.0
 
     # ── 전처리 ────────────────────────────────────────────────
 
@@ -140,26 +134,25 @@ class BitcoinTradingEnvironment(gym.Env):
         return seq
 
     def _portfolio_vector(self, mark_price: float) -> np.ndarray:
-        """7-dim 포트폴리오 벡터 (portfolio_features 길이와 일치)."""
+        """7-dim 포트폴리오 벡터."""
         ic = self.config.initial_cash
         total_equity = self._total_equity(mark_price)
-        position_value = self.btc_holding * mark_price
+        btc_value = self.btc_holding * mark_price
+        position_ratio = btc_value / total_equity if total_equity > 0 else 0.0
 
         unrealized_pnl_pct = 0.0
-        if self.in_position and self.avg_entry_price > 0:
+        if self.btc_holding > 0 and self.avg_entry_price > 0:
             unrealized_pnl_pct = (mark_price - self.avg_entry_price) / self.avg_entry_price
-
-        steps_held_norm = min(self.steps_in_position / max(self.config.min_hold_steps, 1), 2.0)
 
         return np.array(
             [
-                self.cash / ic,                           # 현금 비율
-                position_value / ic,                      # BTC 포지션 비율
-                float(self.in_position),                  # 포지션 보유 여부
-                unrealized_pnl_pct,                       # 미실현 수익률
-                steps_held_norm,                          # 보유 스텝 (정규화)
-                total_equity / ic,                        # 총자산 비율
-                self.realized_pnl / ic,                   # 실현손익 비율
+                self.cash / ic,                                        # 현금 비율
+                btc_value / ic,                                        # BTC 평가액 비율
+                position_ratio,                                        # 현재 BTC 비중
+                unrealized_pnl_pct,                                    # 미실현 수익률
+                min(self.steps_since_rebalance / 60.0, 2.0),          # 마지막 거래 후 경과 (정규화)
+                total_equity / ic,                                     # 총자산 비율
+                self.realized_pnl / ic,                                # 실현손익 비율
             ],
             dtype=np.float32,
         )
@@ -174,40 +167,49 @@ class BitcoinTradingEnvironment(gym.Env):
         port = self._portfolio_vector(current_close)
         return np.concatenate([seq.reshape(-1), ctx, port]).astype(np.float32)
 
-    # ── 거래 실행 ─────────────────────────────────────────────
+    # ── 리밸런싱 ──────────────────────────────────────────────
 
-    def _execute_buy(self, execution_price: float) -> float:
-        """btc_target_ratio 만큼 전량 매수. 반환값: 납부한 수수료."""
-        if self.in_position or execution_price <= 0:
-            return 0.0
-        invest_cash = self.cash * self.config.btc_target_ratio
-        fee = invest_cash * self.config.fee_rate
-        net_invest = invest_cash - fee
-        if net_invest <= 0:
-            return 0.0
-        btc_bought = net_invest / execution_price
-        self.cash -= invest_cash
-        self.btc_holding += btc_bought
-        self.avg_entry_price = execution_price
-        self.in_position = True
-        self.steps_in_position = 0
-        return fee
+    def _rebalance_to_target(self, target_ratio: float, execution_price: float) -> bool:
+        """현재 비중 → target_ratio 로 리밸런싱. 실제 거래 발생 시 True 반환."""
+        total_equity = self._total_equity(execution_price)
+        if total_equity <= 0 or execution_price <= 0:
+            return False
 
-    def _execute_sell_all(self, execution_price: float) -> float:
-        """전량 매도. 반환값: 실현 손익 (수수료 차감 후)."""
-        if not self.in_position or self.btc_holding <= 0 or execution_price <= 0:
-            return 0.0
-        gross_proceeds = self.btc_holding * execution_price
-        fee = gross_proceeds * self.config.fee_rate
-        net_proceeds = gross_proceeds - fee
-        realized = net_proceeds - (self.btc_holding * self.avg_entry_price)
-        self.cash += net_proceeds
+        target_value = total_equity * target_ratio
+        current_value = self.btc_holding * execution_price
+        diff_value = target_value - current_value
+
+        if abs(diff_value) < self.config.min_rebalance_value:
+            return False  # 변화가 너무 작으면 거래 안 함
+
+        if diff_value > 0:
+            # 매수
+            affordable = min(diff_value, self.cash / (1.0 + self.config.fee_rate))
+            if affordable <= 0:
+                return False
+            fee = affordable * self.config.fee_rate
+            btc_bought = affordable / execution_price
+            prev_cost = self.avg_entry_price * self.btc_holding
+            self.cash -= affordable + fee
+            self.btc_holding += btc_bought
+            self.avg_entry_price = (prev_cost + affordable) / self.btc_holding
+            return True
+
+        # 매도
+        sell_value = min(-diff_value, current_value)
+        if sell_value <= 0:
+            return False
+        btc_sold = sell_value / execution_price
+        fee = sell_value * self.config.fee_rate
+        proceeds = sell_value - fee
+        realized = btc_sold * (execution_price - self.avg_entry_price) - fee
+        self.cash += proceeds
+        self.btc_holding = max(0.0, self.btc_holding - btc_sold)
         self.realized_pnl += realized
-        self.btc_holding = 0.0
-        self.avg_entry_price = 0.0
-        self.in_position = False
-        self.steps_in_position = 0
-        return realized
+        if self.btc_holding < 1e-12:
+            self.btc_holding = 0.0
+            self.avg_entry_price = 0.0
+        return True
 
     # ── 환경 루프 ─────────────────────────────────────────────
 
@@ -218,58 +220,33 @@ class BitcoinTradingEnvironment(gym.Env):
         self.btc_holding = 0.0
         self.avg_entry_price = 0.0
         self.realized_pnl = 0.0
-        self.in_position = False
-        self.steps_in_position = 0
+        self.steps_since_rebalance = 0
+        self.last_target_ratio = 0.0
         return self._observation(), {}
 
     def step(self, action: int):
         action = int(action)
+        target_ratio = TARGET_LEVELS[action]
+
         execution_price = self._next_open()
         prev_equity = self._total_equity(execution_price)
 
-        # min_hold_steps 미만이면 SELL → HOLD 강제 변환
-        if action == 2 and self.in_position and self.steps_in_position < self.config.min_hold_steps:
-            action = 0
+        trade_executed = self._rebalance_to_target(target_ratio, execution_price)
 
-        reward = 0.0
-        trade_executed = False
-        realized_pnl_step = 0.0
-        fee_paid = 0.0
-
-        if action == 1:  # BUY
-            fee_paid = self._execute_buy(execution_price)
-            if fee_paid > 0:
-                reward = -(fee_paid / prev_equity) if prev_equity > 0 else 0.0
-                trade_executed = True
-
-        elif action == 2:  # SELL
-            realized_pnl_step = self._execute_sell_all(execution_price)
-            reward = (realized_pnl_step / prev_equity) if prev_equity > 0 else 0.0
-            trade_executed = True
-
-        else:  # HOLD (action == 0)
-            next_close_for_hold = self._next_close()
-            price_return = (
-                (next_close_for_hold - execution_price) / execution_price
-                if execution_price > 0
-                else 0.0
-            )
-            if self.in_position:
-                # 이번 스텝에서 가격이 오르면 +, 내리면 -
-                # → 에이전트가 "지금 들고 있는 게 이득인가?" 를 즉각 학습
-                reward = price_return * self.config.hold_signal_scale
-            else:
-                # 포지션 없을 때 가격이 오르면 소폭 패널티 (진입 유도)
-                reward = -max(price_return, 0.0) * self.config.opportunity_scale
-
-        # 보유 스텝 카운터 증가
-        if self.in_position:
-            self.steps_in_position += 1
+        if trade_executed:
+            self.steps_since_rebalance = 0
+            self.last_target_ratio = target_ratio
+        else:
+            self.steps_since_rebalance += 1
 
         next_close = self._next_close()
         next_equity = self._total_equity(next_close)
-        position_value = self.btc_holding * next_close
-        position_ratio = position_value / next_equity if next_equity > 0 else 0.0
+
+        # 순수 자산 변화율 — 포지션 크기에 자연스럽게 비례
+        reward = (next_equity - prev_equity) / prev_equity if prev_equity > 0 else 0.0
+
+        btc_value = self.btc_holding * next_close
+        position_ratio = btc_value / next_equity if next_equity > 0 else 0.0
 
         self.current_step += 1
         terminated = self.current_step >= len(self.market_frame) - 2
@@ -278,17 +255,16 @@ class BitcoinTradingEnvironment(gym.Env):
 
         info = {
             "action": action,
-            "in_position": self.in_position,
-            "steps_in_position": self.steps_in_position,
+            "target_ratio": target_ratio,
             "position_ratio": position_ratio,
-            "realized_pnl_step": realized_pnl_step,
-            "fee_paid": fee_paid,
+            "trade_executed": trade_executed,
             "prev_equity": prev_equity,
             "next_equity": next_equity,
-            "trade_executed": trade_executed,
             "cash": self.cash,
             "btc_holding": self.btc_holding,
             "avg_entry_price": self.avg_entry_price,
+            "realized_pnl": self.realized_pnl,
+            "steps_since_rebalance": self.steps_since_rebalance,
             "open": float(row["open"]),
             "high": float(row["high"]),
             "low": float(row["low"]),
