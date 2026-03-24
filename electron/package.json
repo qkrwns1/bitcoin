@@ -1,0 +1,24 @@
+{
+  "name": "bitcoin-rl",
+  "version": "1.0.0",
+  "description": "Bitcoin RL Dashboard",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "com.bitcoin.rl",
+    "productName": "Bitcoin RL",
+    "asar": false,
+    "directories": { "output": "dist" },
+    "win": { "target": "nsis", "icon": "icon.ico" },
+    "extraResources": [
+      { "from": "../", "to": "app", "filter": ["**/*", "!electron/**", "!*.git/**"] }
+    ]
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.0.0"
+  }
+}
